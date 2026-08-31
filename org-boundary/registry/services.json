@@ -3,6 +3,18 @@
   "organization": "StegVerse-002",
   "services": [
     {
+      "service_id": "stegverse-002.org-control",
+      "repository": "StegVerse-002/.github",
+      "boundary_role": "BOUNDARY_LOCAL_CONTROL",
+      "profile_status": "ACTIVE",
+      "accepts": [
+        "ecosystem.communication",
+        "ecosystem.monitor.request",
+        "ecosystem.work.request"
+      ],
+      "runtime_required_for_consumption": false
+    },
+    {
       "service_id": "stegverse-002.boundary-diagnostic",
       "repository": "StegVerse-002/.github",
       "boundary_role": "BOUNDARY_LOCAL_DIAGNOSTIC",
