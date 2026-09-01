@@ -33,6 +33,58 @@ def append_live_receipt(path, receipt):
     with path.open("a",encoding="utf-8") as handle:
         handle.write(json.dumps(receipt,sort_keys=True,separators=(",",":"))+"\n")
 
+def digest(v): return hashlib.sha256(canon(v)).hexdigest()
+
+def build_org_ledger_root(state_root, boundary_bundle):
+    repo_path=state_root/"REPOSITORY_LEDGER_ROOT.json"
+    s0_path=state_root/"S0.json"
+    if not repo_path.is_file() or not s0_path.is_file():
+        raise SystemExit("hierarchical-ledger-descendant-root-missing")
+    repo_root=load(repo_path); s0=load(s0_path)
+    run_id=s0.get("run_id")
+    if not isinstance(run_id,str) or not run_id:
+        raise SystemExit("hierarchical-ledger-run-id-missing")
+    child={
+        "scope_type":"repository",
+        "scope_id":repo_root.get("scope_id"),
+        "root_id":repo_root.get("root_id"),
+        "root_hash":repo_root.get("root_hash"),
+        "range":repo_root.get("range"),
+    }
+    receipts=boundary_bundle.get("receipts") or []
+    if not receipts:
+        raise SystemExit("hierarchical-ledger-org-receipts-missing")
+    ordered={
+        "children":[child],
+        "organization_receipts":[
+            {"kind":row.get("kind"),"receipt_id":row.get("receipt_id"),"evidence_hash":row.get("evidence_hash")}
+            for row in receipts
+        ],
+    }
+    ordered_root_hash=digest(ordered)
+    body={
+        "schema_version":"stegverse.hierarchical-ledger-root/v1",
+        "scope_type":"organization",
+        "scope_id":"StegVerse-002",
+        "root_id":"ORG-"+digest({"run_id":run_id,"ordered_root_hash":ordered_root_hash})[:32].upper(),
+        "generated_at":receipts[-1].get("observed_at") or now(),
+        "run_id":run_id,
+        "previous_root_hash":None,
+        "range":{
+            "first_receipt_id":receipts[0].get("receipt_id"),
+            "last_receipt_id":receipts[-1].get("receipt_id"),
+            "receipt_count":len(receipts),
+            "ordered_root_hash":ordered_root_hash,
+        },
+        "children":[child],
+        "reconstruction":{
+            "status":"NOT_ATTEMPTED",
+            "descendant_resolution_required":True,
+            "reference":"ORG_BOUNDARY_RECEIPTS.json",
+        },
+    }
+    return {**body,"root_hash":digest(body)}
+
 def endpoint_result(env,svc,envelope_path):
     adapter=svc.get("endpoint_adapter")
     if svc.get("service_id")=="stegverse-002.self-characterization" and adapter:
@@ -141,6 +193,14 @@ def main():
                     raise SystemExit("org-boundary-prior-bundle-unavailable")
             application_result["org_boundary_receipts_path"]=str(target)
             application_result["org_boundary_receipts_sha256"]=boundary_bundle["bundle_sha256"]
+            org_root_path=state_root/"ORGANIZATION_LEDGER_ROOT.json"
+            if org_root_path.is_file():
+                organization_ledger_root=load(org_root_path)
+            else:
+                organization_ledger_root=build_org_ledger_root(state_root,boundary_bundle)
+                org_root_path.write_text(json.dumps(organization_ledger_root,indent=2,sort_keys=True)+"\n")
+            application_result["organization_ledger_root_path"]=str(org_root_path)
+            application_result["organization_ledger_root_hash"]=organization_ledger_root["root_hash"]
     result={
         "schema_version":reg["organization"].lower().replace(" ","-")+".boundary-execution.v1",
         "packet_id":env["packet_id"],
