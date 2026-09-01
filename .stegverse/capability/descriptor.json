@@ -1,0 +1,29 @@
+{
+  "schema": "stegverse.organization-capability-descriptor/v1",
+  "organization": "StegVerse-002",
+  "repository": "StegVerse-002/.github",
+  "capability_id": "stegverse-002.org-boundary",
+  "capability_class": "ORGANIZATION_BOUNDARY_CAPABILITY",
+  "role": "Canonical StegVerse-002 organization discovery, ingress, egress, resident dispatch, organization ledger, and cross-organization transport boundary.",
+  "availability_state": "ACTIVE_ORGANIZATION_BOUNDARY",
+  "runtime_materialization_may_be_required": true,
+  "discoverability": {
+    "organization_local": true,
+    "discoverable_through": "StegVerse-002/.github",
+    "injected_into_self_characterization_objective": false,
+    "identity_constitution_prescribed": false,
+    "use_required": false,
+    "relevance_to_self_characterization_prescribed": false
+  },
+  "authority": {
+    "repository_is_org_activation_authority": true,
+    "descriptor_grants_execution_authority": false,
+    "descriptor_grants_standing": false,
+    "descriptor_grants_admissibility": false,
+    "descriptor_grants_identity_constitution": false
+  },
+  "ledger": {
+    "repo_transition_contract": ".stegverse/transition-ledger/contract.json",
+    "organization_rollup": "StegVerse-002/.github"
+  }
+}
