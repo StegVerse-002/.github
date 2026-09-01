@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import argparse, hashlib, json, subprocess, tempfile
+import argparse, hashlib, json, os, subprocess, tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 KINDS=["INGRESS_ACCEPTED","DISPATCHED","CONSUMED","RESULT_BOUND","EGRESS_EMITTED"]
@@ -8,6 +9,29 @@ ROOT=Path(__file__).resolve().parents[2]
 def canon(v): return json.dumps(v,sort_keys=True,separators=(",",":")).encode()
 def hid(prefix,v): return prefix+"-"+hashlib.sha256(canon(v)).hexdigest()[:24]
 def load(path): return json.loads(Path(path).read_text())
+def now(): return datetime.now(timezone.utc).isoformat()
+
+def make_receipt(kind, base, previous_receipt_id, *, disposition=None):
+    subject={**base,"kind":kind,"previous_receipt_id":previous_receipt_id}
+    rid=hid(kind.lower(),subject)
+    row={
+        "kind":kind,
+        "receipt_id":rid,
+        "subject":base["service_id"],
+        "evidence_hash":hashlib.sha256(canon(subject)).hexdigest(),
+        "previous_receipt_id":previous_receipt_id,
+        "observed_at":now(),
+    }
+    if disposition is not None:
+        row["application_disposition"]=disposition
+    return row
+
+def append_live_receipt(path, receipt):
+    if path is None:
+        return
+    path.parent.mkdir(parents=True,exist_ok=True)
+    with path.open("a",encoding="utf-8") as handle:
+        handle.write(json.dumps(receipt,sort_keys=True,separators=(",",":"))+"\n")
 
 def endpoint_result(env,svc,envelope_path):
     adapter=svc.get("endpoint_adapter")
@@ -53,25 +77,41 @@ def main():
     if env["destination"]["org"]!=reg["organization"]: raise SystemExit("wrong-destination-org")
     svc=next((s for s in reg["services"] if s["service_id"]==env["destination"]["service"]),None)
     if not svc: raise SystemExit("unknown-service")
-    application_result=endpoint_result(env,svc,a.envelope)
     base={"packet_id":env["packet_id"],"service_id":svc["service_id"],"payload_hash":hashlib.sha256(canon(env["payload"])).hexdigest()}
+    live_path=None
+    if svc.get("service_id")=="stegverse-002.self-characterization":
+        state_root=Path(os.environ.get("STEGVERSE_SELF_CHAR_STATE_ROOT",str(Path.home()/".stegverse/self-characterization-001"))).expanduser().resolve()
+        state_root.mkdir(parents=True,exist_ok=True)
+        live_path=state_root/"ORG_BOUNDARY_RECEIPTS.live.jsonl"
+        if live_path.exists():
+            raise SystemExit("org-boundary-live-receipt-write-once-collision")
     receipts=[]; prev=None
-    for kind in KINDS:
-        subject={**base,"kind":kind,"previous_receipt_id":prev}
-        rid=hid(kind.lower(),subject)
-        receipts.append({"kind":kind,"receipt_id":rid,"subject":svc["service_id"],"evidence_hash":hashlib.sha256(canon(subject)).hexdigest(),"previous_receipt_id":prev})
-        prev=rid
+    ingress_receipt=make_receipt("INGRESS_ACCEPTED",base,prev)
+    receipts.append(ingress_receipt); prev=ingress_receipt["receipt_id"]; append_live_receipt(live_path,ingress_receipt)
+    dispatched_receipt=make_receipt("DISPATCHED",base,prev)
+    receipts.append(dispatched_receipt); prev=dispatched_receipt["receipt_id"]; append_live_receipt(live_path,dispatched_receipt)
+
+    application_result=endpoint_result(env,svc,a.envelope)
+    disposition=str(application_result.get("state") or "UNKNOWN")
+    consumed_receipt=make_receipt("CONSUMED",base,prev,disposition=disposition)
+    receipts.append(consumed_receipt); prev=consumed_receipt["receipt_id"]; append_live_receipt(live_path,consumed_receipt)
+    result_receipt=make_receipt("RESULT_BOUND",base,prev,disposition=disposition)
+    receipts.append(result_receipt); prev=result_receipt["receipt_id"]; append_live_receipt(live_path,result_receipt)
+    egress_receipt=make_receipt("EGRESS_EMITTED",base,prev,disposition=disposition)
+    receipts.append(egress_receipt); prev=egress_receipt["receipt_id"]; append_live_receipt(live_path,egress_receipt)
     if svc.get("service_id")=="stegverse-002.self-characterization" and application_result.get("state_root"):
         state_root=Path(application_result["state_root"]).expanduser().resolve()
         if state_root.is_dir():
             boundary_bundle={
-                "schema":"stegverse.self-characterization-org-boundary-receipts/v0.1",
+                "schema":"stegverse.self-characterization-org-boundary-receipts/v0.2",
                 "experiment_id":"STEGVERSE-002-SELF-CHARACTERIZATION-001",
                 "packet_id":env["packet_id"],
                 "service_id":svc["service_id"],
                 "payload_sha256":base["payload_hash"],
                 "manifest_sha256":application_result.get("manifest_sha256"),
                 "receipts":receipts,
+                "application_disposition":str(application_result.get("state") or "UNKNOWN"),
+                "live_receipt_log":"ORG_BOUNDARY_RECEIPTS.live.jsonl",
                 "authority_effect":env["transition"]["authority_effect"],
                 "authority_transfer_assumed":False,
                 "master_records_required":True,
@@ -90,6 +130,8 @@ def main():
         "organization":reg["organization"],
         "service_id":svc["service_id"],
         "consumed":application_result.get("state")!="BLOCKED",
+        "application_completed":application_result.get("state")=="COMPLETED",
+        "application_disposition":application_result.get("state"),
         "application_result":application_result,
         "authority_effect":env["transition"]["authority_effect"],
         "receipts":receipts,
