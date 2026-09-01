@@ -76,3 +76,30 @@ StegVerse-org/StegVerse-SDK
 ```
 
 This supersedes any use of another organization's resident worker as the execution authority for StegVerse-002. External organizations may observe Master Records-derived evidence or validate published receipt schemas, but they do not execute the StegVerse-002 principal.
+
+
+## Recursive transition ledger scope — 2026-09-01
+
+The repository-level transition-ledger invariant applies to **all StegVerse-002 repositories**, not only the experiment principal and organization boundary.
+
+Current organization census:
+
+- StegVerse-002/StegProfile
+- StegVerse-002/legacy_core_lite
+- StegVerse-002/micro-node-runtime
+- StegVerse-002/capability-registry
+- StegVerse-002/core-lite
+- StegVerse-002/StegGuardian
+- StegVerse-002/admissibility-gateway
+- StegVerse-002/.github
+- StegVerse-002/stegguardian-wiki
+
+Each repository owns and records its durable transitions first through:
+
+- `.stegverse/transition-ledger/contract.json`
+- `.stegverse/transition-ledger/emit.py`
+- `docs/TRANSITION_LEDGER_MIRROR_HANDOFF.md`
+
+Repository replay terminates at repository level. Organization-level consequences are verified and hash-linked by this `.github` organization ledger, and only the evidence required for ecosystem reconstruction propagates to Master Records.
+
+The StegVerse-002 self-characterization-specific receipt chains remain canonical specialized evidence and are not replaced by this universal ledger layer.
