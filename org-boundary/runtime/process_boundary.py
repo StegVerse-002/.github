@@ -6,7 +6,7 @@ from pathlib import Path
 KINDS=["INGRESS_ACCEPTED","DISPATCHED","CONSUMED","RESULT_BOUND","EGRESS_EMITTED"]
 ROOT=Path(__file__).resolve().parents[2]
 
-def canon(v): return json.dumps(v,sort_keys=True,separators=(",",":")).encode()
+def canon(v): return json.dumps(v,sort_keys=True,separators=(",",":"),ensure_ascii=False,allow_nan=False).encode("utf-8")
 def hid(prefix,v): return prefix+"-"+hashlib.sha256(canon(v)).hexdigest()[:24]
 def load(path): return json.loads(Path(path).read_text())
 def now(): return datetime.now(timezone.utc).isoformat()
