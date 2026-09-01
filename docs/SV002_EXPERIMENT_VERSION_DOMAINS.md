@@ -9,7 +9,7 @@ The experiment condition and its implementation/evaluation surfaces use separate
 
 ```text
 experiment condition: v0.3 — FROZEN / OPERATIVE FOR T0
-implementation: v0.8 — EVOLVING PRE-T0
+implementation: v0.9 — EVOLVING PRE-T0
 external evaluation: independent revision stream
 expanded protocol document: non-operative unless separately adopted
 ```
@@ -71,3 +71,17 @@ Implementation v0.8 adds only evidence/custody plumbing outside the frozen princ
 - frozen v0.3 contract binding correction in the org execution surface.
 
 No principal-visible input, resource, search behavior, action vocabulary, or stopping condition is changed.
+
+
+## v0.9 implementation note — 2026-09-01
+
+Implementation v0.9 adds a resident-only pre-T0 evaluator and readiness receipt schema. The evaluator:
+- performs the synthetic cross-repository custody/reconstruction/observer rehearsal using already materialized local repository roots;
+- performs deliberate fail-closed perturbations without invoking the authentic principal;
+- verifies exact frozen v0.3 artifact digests;
+- requires an explicitly declared/eligible StegVerse resident-node evidence record;
+- verifies the actual loopback runtime identity live through the frozen principal runtime-identity verifier;
+- requires an unoccupied principal state root;
+- emits `READY_FOR_T0` only when both source/rehearsal and authentic runtime-preflight gates pass.
+
+This is implementation/evaluation plumbing only. It does not alter any principal-visible v0.3 input, resource, search behavior, permitted action, or stopping rule.
