@@ -148,3 +148,25 @@ expanded protocol document: NON-OPERATIVE unless separately adopted
 Implementation revisions may repair execution, reconstruction, custody routing, observer projection, viewer verification, and fail-closed behavior without changing the experiment-condition version. Any change to the principal-visible objective, system interface, discovery/read surface, search semantics that alter the discovery condition, permitted actions, stopping semantics, subject-visible identity information, or frozen snapshot content requires a new experiment-condition version.
 
 This declaration is evaluator/control-plane metadata only and is not principal input, searchable content, or readable experiment material.
+
+
+## v0.8 canonical Master Records custody binding — 2026-09-01
+
+The canonical StegVerse-002 self-characterization boundary now automatically publishes the completed v0.3 artifact set to Master Records after the organization ledger root is materialized.
+
+Source:
+- `resident-runtime/submit_sv002_self_characterization_to_master_records.py`
+
+The publisher:
+- requires the complete canonical v0.3 artifact set;
+- validates experiment/run binding and completed principal state;
+- binds the exact artifact names, sizes, SHA-256 values, artifact-set hash, and organization ledger root;
+- publishes a deterministic InTr/federation packet to `master-records.sv002-self-characterization-reconstruction`;
+- writes `MASTER_RECORDS_CUSTODY_HANDOFF.json` into the same state root;
+- is exactly-once for the same run/artifact-set and refuses a write-once collision;
+- never reruns the principal and grants no authority.
+
+The organization boundary now reports `PUBLISHED_TO_MASTER_RECORDS` when that handoff receipt exists. Publication is not reconstruction success; Master Records must consume the packet, establish custody, and produce reconstruction PASS separately.
+
+The StegVerse-002 entity binding now points to the frozen operative contract:
+`experiments/self-characterization-001/EXPERIMENT_CONTRACT.v0.3.json`.

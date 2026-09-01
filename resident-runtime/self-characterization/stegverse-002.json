@@ -9,7 +9,7 @@
     "repository_name": "micro-node-runtime",
     "root_env": "STEGVERSE_MICRO_NODE_RUNTIME_ROOT",
     "launcher": "tools/run_self_characterization_principal.py",
-    "contract": "experiments/self-characterization-001/EXPERIMENT_CONTRACT.v0.2.json"
+    "contract": "experiments/self-characterization-001/EXPERIMENT_CONTRACT.v0.3.json"
   },
   "accepted_operation": "REQUEST_SELF_CHARACTERIZATION",
   "transport": "InTr",
