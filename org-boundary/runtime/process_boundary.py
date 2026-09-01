@@ -114,26 +114,31 @@ def main():
     if svc.get("service_id")=="stegverse-002.self-characterization" and application_result.get("state_root"):
         state_root=Path(application_result["state_root"]).expanduser().resolve()
         if state_root.is_dir():
-            boundary_bundle=prior_boundary_bundle or {
-                "schema":"stegverse.self-characterization-org-boundary-receipts/v0.2",
-                "experiment_id":"STEGVERSE-002-SELF-CHARACTERIZATION-001",
-                "packet_id":env["packet_id"],
-                "service_id":svc["service_id"],
-                "payload_sha256":base["payload_hash"],
-                "manifest_sha256":application_result.get("manifest_sha256"),
-                "receipts":receipts,
-                "application_disposition":str(application_result.get("state") or "UNKNOWN"),
-                "live_receipt_log":"ORG_BOUNDARY_RECEIPTS.live.jsonl",
-                "authority_effect":env["transition"]["authority_effect"],
-                "authority_transfer_assumed":False,
-                "master_records_required":True,
-            }
-            boundary_bundle["bundle_sha256"]=hashlib.sha256(canon(boundary_bundle)).hexdigest()
             target=state_root/"ORG_BOUNDARY_RECEIPTS.json"
-            if target.exists():
-                if load(target)!=boundary_bundle: raise SystemExit("org-boundary-receipt-write-once-collision")
+            if prior_boundary_bundle is None:
+                boundary_bundle={
+                    "schema":"stegverse.self-characterization-org-boundary-receipts/v0.2",
+                    "experiment_id":"STEGVERSE-002-SELF-CHARACTERIZATION-001",
+                    "packet_id":env["packet_id"],
+                    "service_id":svc["service_id"],
+                    "payload_sha256":base["payload_hash"],
+                    "manifest_sha256":application_result.get("manifest_sha256"),
+                    "receipts":receipts,
+                    "application_disposition":str(application_result.get("state") or "UNKNOWN"),
+                    "live_receipt_log":"ORG_BOUNDARY_RECEIPTS.live.jsonl",
+                    "authority_effect":env["transition"]["authority_effect"],
+                    "authority_transfer_assumed":False,
+                    "master_records_required":True,
+                }
+                boundary_bundle["bundle_sha256"]=hashlib.sha256(canon(boundary_bundle)).hexdigest()
+                if target.exists():
+                    if load(target)!=boundary_bundle: raise SystemExit("org-boundary-receipt-write-once-collision")
+                else:
+                    target.write_text(json.dumps(boundary_bundle,indent=2,sort_keys=True)+"\n")
             else:
-                target.write_text(json.dumps(boundary_bundle,indent=2,sort_keys=True)+"\n")
+                boundary_bundle=prior_boundary_bundle
+                if not target.is_file() or load(target)!=boundary_bundle:
+                    raise SystemExit("org-boundary-prior-bundle-unavailable")
             application_result["org_boundary_receipts_path"]=str(target)
             application_result["org_boundary_receipts_sha256"]=boundary_bundle["bundle_sha256"]
     result={
