@@ -1,0 +1,29 @@
+name: SV002 Capability Discovery
+
+"on":
+  push:
+    paths:
+      - "org-boundary/registry/capabilities.json"
+      - "org-boundary/registry/capability-descriptors.snapshot.json"
+      - "resident-runtime/capability_discovery_surface.py"
+      - "org-boundary/runtime/process_boundary.py"
+      - "tests/test_capability_discovery_surface.py"
+      - ".github/workflows/validate-capability-discovery.yml"
+  pull_request:
+    paths:
+      - "org-boundary/registry/capabilities.json"
+      - "org-boundary/registry/capability-descriptors.snapshot.json"
+      - "resident-runtime/capability_discovery_surface.py"
+      - "org-boundary/runtime/process_boundary.py"
+      - "tests/test_capability_discovery_surface.py"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m py_compile resident-runtime/capability_discovery_surface.py org-boundary/runtime/process_boundary.py
+      - run: python3 -m unittest tests.test_capability_discovery_surface
