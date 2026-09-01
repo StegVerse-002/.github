@@ -165,6 +165,7 @@ def run(envelope_path: Path, entity_id: str) -> dict[str, Any]:
         "objective": str(manifest.get("objective") or ""),
     }
     env["STEGVERSE_SELF_CHARACTERIZATION_CAUSAL_INGRESS_JSON"] = json.dumps(causal_ingress, sort_keys=True, separators=(",", ":"))
+    state_root=Path(env.get("STEGVERSE_SELF_CHAR_STATE_ROOT",str(Path.home()/".stegverse/self-characterization-001"))).expanduser().resolve()
     completed = subprocess.run(
         ["python3", str(root / principal["launcher"])],
         cwd=root,
@@ -182,6 +183,7 @@ def run(envelope_path: Path, entity_id: str) -> dict[str, Any]:
         "ingress_packet_id": envelope.get("packet_id"),
         "manifest_sha256": manifest.get("manifest_sha256"),
         "principal_repository": f"{principal['repository_organization']}/{principal['repository_name']}",
+        "state_root": str(state_root),
         "principal_execution_attempted": True,
         "returncode": completed.returncode,
         "stdout_tail": completed.stdout[-8192:],
