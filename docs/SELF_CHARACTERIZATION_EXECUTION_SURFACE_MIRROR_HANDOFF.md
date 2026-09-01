@@ -61,3 +61,18 @@ StegVerse-002 is the event source and receipt issuer. Master Records is the cano
 ## Remaining runtime evidence
 
 Source installation does not establish a live request, principal execution, egress, custody, or reconstruction. Those remain evidence transitions.
+
+
+## Boundary receipt custody binding — 2026-09-01
+
+The organization boundary now persists `ORG_BOUNDARY_RECEIPTS.json` into the same principal evidence root after the self-characterization endpoint returns. The bundle hash-binds the exact ingress packet, manifest hash, payload hash, and the five org-boundary transitions:
+
+```text
+INGRESS_ACCEPTED
+-> DISPATCHED
+-> CONSUMED
+-> RESULT_BOUND
+-> EGRESS_EMITTED
+```
+
+Master Records reconstruction is required to validate this bundle together with S0, principal transition receipts, and final artifacts. This closes the boundary-history gap between the external SDK packet and the principal evidence chain.
