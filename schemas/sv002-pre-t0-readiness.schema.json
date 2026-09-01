@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stegverse.org/schemas/sv002-pre-t0-readiness.schema.json",
+  "title": "SV002 Pre-T0 Readiness Receipt",
+  "type": "object",
+  "required": [
+    "schema",
+    "experiment_id",
+    "experiment_condition_version",
+    "implementation_version",
+    "principal_executed",
+    "source_ready",
+    "runtime_ready",
+    "readiness_state",
+    "authority_effect"
+  ],
+  "properties": {
+    "schema": {
+      "const": "stegverse.sv002-pre-t0-readiness/v1"
+    },
+    "experiment_id": {
+      "const": "STEGVERSE-002-SELF-CHARACTERIZATION-001"
+    },
+    "experiment_condition_version": {
+      "const": "v0.3"
+    },
+    "implementation_version": {
+      "type": "string"
+    },
+    "principal_executed": {
+      "const": false
+    },
+    "source_ready": {
+      "type": "boolean"
+    },
+    "runtime_ready": {
+      "type": "boolean"
+    },
+    "readiness_state": {
+      "enum": [
+        "READY_FOR_T0",
+        "SOURCE_READY_RUNTIME_PENDING",
+        "FAIL_CLOSED_NOT_READY"
+      ]
+    },
+    "authority_effect": {
+      "const": "NONE"
+    }
+  },
+  "additionalProperties": true
+}

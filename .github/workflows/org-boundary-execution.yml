@@ -1,9 +1,9 @@
 name: Org Boundary Execution
 on:
   push:
-    paths: ['org-boundary/**','resident-runtime/submit_sv002_self_characterization_to_master_records.py','tests/test_self_characterization_hierarchical_ledger.py','tests/test_sv002_master_records_custody_handoff.py','.github/workflows/org-boundary-execution.yml']
+    paths: ['org-boundary/**','resident-runtime/submit_sv002_self_characterization_to_master_records.py','resident-runtime/evaluate_sv002_pre_t0_readiness.py','schemas/sv002-pre-t0-readiness.schema.json','tests/test_self_characterization_hierarchical_ledger.py','tests/test_sv002_master_records_custody_handoff.py','tests/test_sv002_pre_t0_readiness.py','.github/workflows/org-boundary-execution.yml']
   pull_request:
-    paths: ['org-boundary/**','tests/test_self_characterization_hierarchical_ledger.py','.github/workflows/org-boundary-execution.yml']
+    paths: ['org-boundary/**','resident-runtime/evaluate_sv002_pre_t0_readiness.py','schemas/sv002-pre-t0-readiness.schema.json','tests/test_self_characterization_hierarchical_ledger.py','tests/test_sv002_pre_t0_readiness.py','.github/workflows/org-boundary-execution.yml']
   workflow_dispatch:
 jobs:
   execute:
@@ -13,3 +13,4 @@ jobs:
       - run: python3 org-boundary/tests/test_process_boundary.py
       - run: python3 -m unittest -v tests.test_self_characterization_hierarchical_ledger
       - run: python3 -m unittest -v tests.test_sv002_master_records_custody_handoff
+      - run: python3 -m unittest -v tests.test_sv002_pre_t0_readiness
