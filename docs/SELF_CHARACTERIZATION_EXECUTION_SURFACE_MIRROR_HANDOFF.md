@@ -76,3 +76,21 @@ INGRESS_ACCEPTED
 ```
 
 Master Records reconstruction is required to validate this bundle together with S0, principal transition receipts, and final artifacts. This closes the boundary-history gap between the external SDK packet and the principal evidence chain.
+
+
+## Federation ingress/return dispatch — 2026-09-01
+
+The organization kernel and shared-Gateway cycle now dispatch registered internal endpoint adapters rather than rejecting them as non-control services. For the self-characterization lane this makes the operational route:
+
+```text
+federation frame
+-> StegVerse-002 org kernel
+-> org-boundary process_boundary
+-> stegverse-002.self-characterization
+-> principal
+-> org-boundary receipt bundle
+-> exact endpoint response packet
+-> originating SDK service
+```
+
+The response packet carries `response_to_packet_id` and therefore cannot trigger a response loop. A repeated identical request reaches the exactly-once guard and returns the preserved result without rerunning the principal.
