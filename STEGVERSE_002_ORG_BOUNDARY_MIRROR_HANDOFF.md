@@ -124,3 +124,19 @@ Operations:
 The service is discovery-only and grants no authority. Descriptor availability does not prescribe identity constitution, self-characterization relevance, use, standing, or admissibility.
 
 For the still-unexecuted self-characterization experiment, the pinned capability snapshot is exposed through the principal's ordinary resource-search/read interface without injecting the sibling list or an ontology into the objective.
+
+
+## v0.3 organization-boundary source closure — 2026-09-01
+
+Canonical remaining boundary deltas were merged by PR #12 as `f77e4fe49a13b9ca2fae898053d87569b52361aa`.
+
+Validated source behavior now includes:
+- live boundary receipt ordering around the principal execution surface;
+- normalized endpoint/application disposition separate from transport consumption and principal completion;
+- exactly-once reuse of an already frozen boundary bundle;
+- repository-root -> organization-root hierarchical aggregation;
+- pull-request validation of both the boundary processor and self-characterization hierarchical organization ledger.
+
+PR validation for Org Boundary Execution and SV002 Capability Discovery passed before merge.
+
+Source readiness does not establish resident execution. The next machine-owned transition is a single authentic `STEGVERSE-002-SELF-CHARACTERIZATION-001` execution on an eligible StegVerse-002 resident runtime, followed by Master Records reconstruction. GitHub Actions remains validation-only and MUST NOT substitute for that runtime.
