@@ -29,3 +29,5 @@ class CapabilityDiscoveryTest(unittest.TestCase):
         self.assertIn("StegVerse-002/.github",repos)
 
 if __name__=="__main__": unittest.main()
+
+# validation-trigger
