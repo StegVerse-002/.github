@@ -1,0 +1,77 @@
+{
+  "schema": "stegverse.organization-capability-registry/v1",
+  "organization": "StegVerse-002",
+  "registry_owner": "StegVerse-002/.github",
+  "discovery_semantics": {
+    "available_does_not_mean_used": true,
+    "discoverable_does_not_mean_accessed": true,
+    "descriptor_does_not_define_entity_ontology": true,
+    "capability_does_not_grant_authority": true,
+    "discovery_does_not_grant_standing": true
+  },
+  "capabilities": [
+    {
+      "capability_id": "stegverse-002.stegprofile",
+      "repository": "StegVerse-002/StegProfile",
+      "descriptor_path": ".stegverse/capability/descriptor.json",
+      "descriptor_commit": "a9ffbc5af788db2630b5296a50a4f66c2595a102",
+      "access_semantics": "AVAILABLE_NOT_REQUIRED"
+    },
+    {
+      "capability_id": "stegverse-002.legacy-core-lite",
+      "repository": "StegVerse-002/legacy_core_lite",
+      "descriptor_path": ".stegverse/capability/descriptor.json",
+      "descriptor_commit": "33ae3592845927137f518162ae94e79b105a7015",
+      "access_semantics": "AVAILABLE_NOT_REQUIRED"
+    },
+    {
+      "capability_id": "stegverse-002.micro-node-runtime",
+      "repository": "StegVerse-002/micro-node-runtime",
+      "descriptor_path": ".stegverse/capability/descriptor.json",
+      "descriptor_commit": "7495fc69062b417f9e99f4cd006e81828cda0513",
+      "access_semantics": "AVAILABLE_NOT_REQUIRED"
+    },
+    {
+      "capability_id": "stegverse-002.capability-registry",
+      "repository": "StegVerse-002/capability-registry",
+      "descriptor_path": ".stegverse/capability/descriptor.json",
+      "descriptor_commit": "d2dac79b5d846dc882e60de080a7a6011878fa09",
+      "access_semantics": "AVAILABLE_NOT_REQUIRED"
+    },
+    {
+      "capability_id": "stegverse-002.core-lite",
+      "repository": "StegVerse-002/core-lite",
+      "descriptor_path": ".stegverse/capability/descriptor.json",
+      "descriptor_commit": "283d55f12dec5582fa23a3c79dc4124105b9421d",
+      "access_semantics": "AVAILABLE_NOT_REQUIRED"
+    },
+    {
+      "capability_id": "stegverse-002.stegguardian",
+      "repository": "StegVerse-002/StegGuardian",
+      "descriptor_path": ".stegverse/capability/descriptor.json",
+      "descriptor_commit": "2daae3f666882d2930b5b181fd59a2d65f9edc3f",
+      "access_semantics": "AVAILABLE_NOT_REQUIRED"
+    },
+    {
+      "capability_id": "stegverse-002.admissibility-gateway",
+      "repository": "StegVerse-002/admissibility-gateway",
+      "descriptor_path": ".stegverse/capability/descriptor.json",
+      "descriptor_commit": "0a1fa5f2813b652412d13b3d253ee52beacc5416",
+      "access_semantics": "AVAILABLE_NOT_REQUIRED"
+    },
+    {
+      "capability_id": "stegverse-002.org-boundary",
+      "repository": "StegVerse-002/.github",
+      "descriptor_path": ".stegverse/capability/descriptor.json",
+      "descriptor_commit": "d465a720eb534f2be8ffca387d3d3faffa8683e7",
+      "access_semantics": "AVAILABLE_NOT_REQUIRED"
+    },
+    {
+      "capability_id": "stegverse-002.stegguardian-wiki",
+      "repository": "StegVerse-002/stegguardian-wiki",
+      "descriptor_path": ".stegverse/capability/descriptor.json",
+      "descriptor_commit": "e8b801ada889945a5bd487a991f0625d683f5240",
+      "access_semantics": "AVAILABLE_NOT_REQUIRED"
+    }
+  ]
+}
