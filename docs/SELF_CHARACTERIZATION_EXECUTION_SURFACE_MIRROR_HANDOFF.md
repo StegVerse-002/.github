@@ -114,3 +114,21 @@ EGRESS_EMITTED
 The live append-only surface is `ORG_BOUNDARY_RECEIPTS.live.jsonl`. The terminal `ORG_BOUNDARY_RECEIPTS.json` bundle is v0.2 and preserves per-event `observed_at` plus the endpoint application disposition. Exactly-once replay reuses the already-frozen bundle rather than reminting a second history.
 
 Transport consumption and principal completion remain distinct fields. A returned fail-closed/partial endpoint result may be transported and bound without being promoted to successful experiment completion.
+
+
+## Contract-alignment repair — 2026-09-01
+
+The org boundary now records the self-characterization boundary progression append-only while it occurs:
+
+```text
+INGRESS_ACCEPTED
+-> DISPATCHED
+-> endpoint execution
+-> CONSUMED
+-> RESULT_BOUND
+-> EGRESS_EMITTED
+```
+
+Each boundary receipt carries `observed_at`; post-endpoint receipts carry the exact application disposition so transport completion cannot be confused with principal completion. The terminal bundle is v0.2 and references the live JSONL receipt log.
+
+The browser/public surfaces and Master Records verifier must consume the same canonical experiment ID `STEGVERSE-002-SELF-CHARACTERIZATION-001`. Runtime observation remains pending.
