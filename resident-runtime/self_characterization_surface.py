@@ -59,25 +59,54 @@ def extract_request(envelope: dict[str, Any]) -> dict[str, Any]:
     return request
 
 def validate_manifest(request: dict[str, Any], binding: dict[str, Any]) -> dict[str, Any]:
+    expected = binding.get("expected_request") or {}
     payload = request.get("payload") or {}
     manifest = payload.get("manifest")
     if not isinstance(manifest, dict):
         raise RuntimeError("bound interaction manifest missing")
-    if manifest.get("operation") != "REQUEST_SELF_CHARACTERIZATION":
-        raise RuntimeError("manifest operation mismatch")
+    if request.get("schema_version") != expected.get("schema_version"):
+        raise RuntimeError("request schema mismatch")
+    if request.get("request_class") != expected.get("request_class"):
+        raise RuntimeError("request class mismatch")
+    if request.get("operation") != expected.get("operation") or manifest.get("operation") != expected.get("operation"):
+        raise RuntimeError("operation mismatch")
+    if request.get("transport") != expected.get("transport"):
+        raise RuntimeError("transport mismatch")
     target = manifest.get("target") or {}
     entity_id = binding["entity_id"]
     if target.get("entity_id") != entity_id:
         raise RuntimeError("manifest target does not match org-local entity")
-    if manifest.get("authority_transfer") is not False:
-        raise RuntimeError("manifest authority transfer prohibited")
-    if manifest.get("authority_effect_resolution") != "DERIVED_FROM_APPLICABLE_TRANSITION_ELEMENTS":
+    if manifest.get("experiment_id") != expected.get("experiment_id"):
+        raise RuntimeError("experiment binding mismatch")
+    if (manifest.get("source_organization") or {}).get("organization_id") != expected.get("source_organization_id"):
+        raise RuntimeError("source organization mismatch")
+    if manifest.get("manifest_id") != expected.get("manifest_id"):
+        raise RuntimeError("manifest id mismatch")
+    if manifest.get("objective") != expected.get("objective"):
+        raise RuntimeError("frozen objective mismatch")
+    if manifest.get("authority_transfer") is not False or request.get("authority_transfer") is not False:
+        raise RuntimeError("authority transfer prohibited")
+    if manifest.get("authority_effect_resolution") != expected.get("authority_effect_resolution") or request.get("authority_effect_resolution") != expected.get("authority_effect_resolution"):
         raise RuntimeError("transition-effect semantics mismatch")
+    policy = manifest.get("knowledge_policy") or {}
+    if policy != expected.get("knowledge_policy"):
+        raise RuntimeError("knowledge policy mismatch")
     body = dict(manifest)
     claimed = str(body.pop("manifest_sha256", ""))
     actual = hashlib.sha256(canon(body)).hexdigest()
-    if claimed and claimed != actual:
+    if claimed != actual:
         raise RuntimeError("manifest SHA-256 mismatch")
+    bindings = request.get("bindings") or {}
+    exact_bindings = {
+        "experiment_id": expected.get("experiment_id"),
+        "source_organization_id": expected.get("source_organization_id"),
+        "target_entity_id": entity_id,
+        "manifest_id": expected.get("manifest_id"),
+        "manifest_sha256": claimed,
+    }
+    for key, value in exact_bindings.items():
+        if bindings.get(key) != value:
+            raise RuntimeError(f"bindings.{key} mismatch")
     return manifest
 
 def repo_candidates(binding: dict[str, Any]) -> list[Path]:
@@ -121,8 +150,21 @@ def run(envelope_path: Path, entity_id: str) -> dict[str, Any]:
     root = resolve_principal_root(binding)
     principal = binding["principal"]
     env = dict(os.environ)
-    env["STEGVERSE_SELF_CHARACTERIZATION_INGRESS_PACKET_ID"] = str(envelope.get("packet_id") or "")
-    env["STEGVERSE_SELF_CHARACTERIZATION_MANIFEST_SHA256"] = str(manifest.get("manifest_sha256") or "")
+    causal_ingress = {
+        "schema": "stegverse.self-characterization-causal-ingress/v0.1",
+        "packet_id": str(envelope.get("packet_id") or ""),
+        "origin_organization": str((envelope.get("origin") or {}).get("org") or ""),
+        "origin_service": str((envelope.get("origin") or {}).get("service") or ""),
+        "destination_organization": str((envelope.get("destination") or {}).get("org") or ""),
+        "destination_service": str((envelope.get("destination") or {}).get("service") or ""),
+        "experiment_id": str(manifest.get("experiment_id") or ""),
+        "operation": str(manifest.get("operation") or ""),
+        "manifest_id": str(manifest.get("manifest_id") or ""),
+        "manifest_sha256": str(manifest.get("manifest_sha256") or ""),
+        "source_organization_id": str((manifest.get("source_organization") or {}).get("organization_id") or ""),
+        "objective": str(manifest.get("objective") or ""),
+    }
+    env["STEGVERSE_SELF_CHARACTERIZATION_CAUSAL_INGRESS_JSON"] = json.dumps(causal_ingress, sort_keys=True, separators=(",", ":"))
     completed = subprocess.run(
         ["python3", str(root / principal["launcher"])],
         cwd=root,
