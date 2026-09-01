@@ -52,3 +52,27 @@ Replace generic INTERNAL_ENDPOINT entries with tighter endpoint-specific profile
 - GitHub Actions may validate or transport evidence, but GitHub-hosted workflow execution is not required as sovereign runtime authority.
 - Canonical implementation paths: `org-boundary/runtime/`, `org-boundary/registry/`, `org-boundary/schemas/`, `org-boundary/evidence/`, `resident-runtime/`.
 - Any legacy resident activation implementation outside `StegVerse-002/.github` becomes an endpoint/provider to this boundary or must be migrated here; it must not remain a competing organizational activation point.
+
+
+## Self-characterization execution ownership — 2026-09-01
+
+The reusable organization-local AI self-characterization execution surface is now installed here:
+
+- `resident-runtime/self_characterization_surface.py`
+- `resident-runtime/self-characterization/stegverse-002.json`
+- `docs/SELF_CHARACTERIZATION_EXECUTION_SURFACE_MIRROR_HANDOFF.md`
+- service `stegverse-002.self-characterization`
+
+Canonical path:
+
+```text
+StegVerse-org/StegVerse-SDK
+-> StegVerse-org/.github
+-> StegVerse-002/.github
+-> stegverse-002.self-characterization
+-> StegVerse-002/micro-node-runtime
+-> StegVerse-002/.github egress
+-> Master Records
+```
+
+This supersedes any use of another organization's resident worker as the execution authority for StegVerse-002. External organizations may observe Master Records-derived evidence or validate published receipt schemas, but they do not execute the StegVerse-002 principal.
