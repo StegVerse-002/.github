@@ -24,6 +24,18 @@ def endpoint_result(env,svc,envelope_path):
             result=load(out)
             result["adapter_returncode"]=completed.returncode
             return result
+    if svc.get("boundary_role")=="INTERNAL_ENDPOINT" and adapter:
+        with tempfile.TemporaryDirectory() as td:
+            out=Path(td)/"endpoint-result.json"
+            completed=subprocess.run(
+                ["python3",str(ROOT/adapter),"--ingress",str(Path(envelope_path).resolve()),"--out",str(out)],
+                cwd=ROOT,capture_output=True,text=True,check=False,timeout=120
+            )
+            if not out.is_file():
+                raise SystemExit("endpoint-adapter-produced-no-result")
+            result=load(out)
+            result["adapter_returncode"]=completed.returncode
+            return result
     if svc.get("boundary_role")=="BOUNDARY_LOCAL_DIAGNOSTIC":
         return {"echo":env["payload"]}
     raise SystemExit("endpoint-adapter-not-installed")
