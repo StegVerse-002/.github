@@ -170,3 +170,21 @@ The organization boundary now reports `PUBLISHED_TO_MASTER_RECORDS` when that ha
 
 The StegVerse-002 entity binding now points to the frozen operative contract:
 `experiments/self-characterization-001/EXPERIMENT_CONTRACT.v0.3.json`.
+
+
+## v0.9 resident pre-T0 readiness evaluator — 2026-09-01
+
+The failed GitHub-hosted multi-repository rehearsal has been replaced by a resident-only evaluator that requires the participating repositories to already be locally materialized under StegVerse authority:
+
+- `resident-runtime/evaluate_sv002_pre_t0_readiness.py`
+- `schemas/sv002-pre-t0-readiness.schema.json`
+
+The evaluator never runs the authentic principal. It uses the canonical synthetic v0.3 reconstruction fixture to rehearse the complete custody path, exactly-once publication, Master Records reconstruction, monitoring reference, custody-only public projection, and viewer-verification contract. It also perturbs artifact bytes, RunID, and organization-root binding and requires fail-closed behavior.
+
+Runtime readiness is a separate gate. `READY_FOR_T0` additionally requires:
+- explicit `stegverse.resident-node-eligibility/v1` evidence with declared/eligible/StegVerse-owned-or-federated state;
+- live runtime identity verification of the qualifying non-reference loopback principal model/process;
+- hosted-environment guards clear;
+- empty canonical principal state root.
+
+The readiness receipt always declares `principal_executed=false` and `authority_effect=NONE`. Source or rehearsal PASS cannot substitute for authentic runtime identity/host evidence.
