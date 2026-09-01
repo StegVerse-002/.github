@@ -208,7 +208,7 @@ def main():
         "service_id":svc["service_id"],
         "consumed":application_result.get("state")!="BLOCKED",
         "application_completed":application_result.get("state")=="COMPLETED",
-        "application_disposition":application_result.get("state"),
+        "application_disposition":disposition,
         "application_result":application_result,
         "authority_effect":env["transition"]["authority_effect"],
         "receipts":receipts,
