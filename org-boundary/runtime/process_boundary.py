@@ -152,7 +152,11 @@ def main():
         "application_result":application_result,
         "authority_effect":env["transition"]["authority_effect"],
         "receipts":receipts,
-        "reconstruction":{"same_execution_required":True,"status":"PENDING_MASTER_RECORDS","terminal_receipt_id":prev}
+        "reconstruction":{
+            "same_execution_required":True,
+            "status":"RECONSTRUCTED" if svc.get("boundary_role")=="BOUNDARY_LOCAL_DIAGNOSTIC" else "PENDING_MASTER_RECORDS",
+            "terminal_receipt_id":prev
+        }
     }
     Path(a.out).parent.mkdir(parents=True,exist_ok=True)
     Path(a.out).write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
