@@ -103,3 +103,24 @@ Each repository owns and records its durable transitions first through:
 Repository replay terminates at repository level. Organization-level consequences are verified and hash-linked by this `.github` organization ledger, and only the evidence required for ecosystem reconstruction propagates to Master Records.
 
 The StegVerse-002 self-characterization-specific receipt chains remain canonical specialized evidence and are not replaced by this universal ledger layer.
+
+
+## Organization capability discovery surface — 2026-09-01
+
+Every StegVerse-002 repository owns `.stegverse/capability/descriptor.json`. This organization boundary maintains an exact-source-commit projection in:
+
+- `org-boundary/registry/capabilities.json`
+- `org-boundary/registry/capability-descriptors.snapshot.json`
+
+Read-only discovery service:
+
+`stegverse-002.capability-discovery`
+
+Operations:
+- `LIST_CAPABILITIES`
+- `SEARCH_CAPABILITIES`
+- `READ_CAPABILITY_DESCRIPTOR`
+
+The service is discovery-only and grants no authority. Descriptor availability does not prescribe identity constitution, self-characterization relevance, use, standing, or admissibility.
+
+For the still-unexecuted self-characterization experiment, the pinned capability snapshot is exposed through the principal's ordinary resource-search/read interface without injecting the sibling list or an ontology into the objective.
