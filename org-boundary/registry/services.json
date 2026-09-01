@@ -88,6 +88,20 @@
       "endpoint_adapter": "resident-runtime/self_characterization_surface.py",
       "entity_binding": "resident-runtime/self-characterization/stegverse-002.json",
       "runtime_required_for_consumption": true
+    },
+    {
+      "service_id": "stegverse-002.capability-discovery",
+      "repository": "StegVerse-002/.github",
+      "boundary_role": "INTERNAL_ENDPOINT",
+      "profile_status": "ACTIVE",
+      "accepts": [
+        "LIST_CAPABILITIES",
+        "SEARCH_CAPABILITIES",
+        "READ_CAPABILITY_DESCRIPTOR"
+      ],
+      "endpoint_adapter": "resident-runtime/capability_discovery_surface.py",
+      "runtime_required_for_consumption": false,
+      "authority_effect": "NONE_DISCOVERY_ONLY"
     }
   ],
   "boundary_rule": "Cross-organization ingress/egress semantics are defined by the organization boundary; endpoint authority remains transition-governed."
