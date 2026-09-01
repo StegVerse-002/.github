@@ -26,5 +26,14 @@
   "local_spool_scope": "SAME_HOST_FALLBACK_ONLY",
   "resident_cycle_entrypoint": "resident-runtime/federation_cycle.py",
   "federation_poll_mode": "OUTBOUND_ONLY",
-  "federation_network_route": "SHARED_SERVICE_GATEWAY"
+  "federation_network_route": "SHARED_SERVICE_GATEWAY",
+  "self_characterization_surface": {
+    "state": "SOURCE_INSTALLED",
+    "implementation": "resident-runtime/self_characterization_surface.py",
+    "binding": "resident-runtime/self-characterization/stegverse-002.json",
+    "service_id": "stegverse-002.self-characterization",
+    "principal_repository": "StegVerse-002/micro-node-runtime",
+    "cross_organization_principal_execution_allowed": false,
+    "master_records_required": true
+  }
 }
