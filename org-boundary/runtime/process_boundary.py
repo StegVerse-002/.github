@@ -201,6 +201,26 @@ def main():
                 org_root_path.write_text(json.dumps(organization_ledger_root,indent=2,sort_keys=True)+"\n")
             application_result["organization_ledger_root_path"]=str(org_root_path)
             application_result["organization_ledger_root_hash"]=organization_ledger_root["root_hash"]
+            if application_result.get("state")=="COMPLETED":
+                handoff_script=ROOT/"resident-runtime/submit_sv002_self_characterization_to_master_records.py"
+                handoff_receipt=state_root/"MASTER_RECORDS_CUSTODY_HANDOFF.json"
+                if handoff_script.is_file():
+                    handoff_done=subprocess.run(
+                        ["python3",str(handoff_script),"--state-root",str(state_root)],
+                        cwd=ROOT,capture_output=True,text=True,check=False,timeout=120
+                    )
+                    handoff_value=None
+                    if handoff_receipt.is_file():
+                        try: handoff_value=load(handoff_receipt)
+                        except Exception: handoff_value=None
+                    application_result["master_records_handoff"]={
+                        "state":(handoff_value or {}).get("state") or ("PENDING" if handoff_done.returncode else "PUBLISHED_FOR_MASTER_RECORDS_CUSTODY"),
+                        "receipt_path":str(handoff_receipt) if handoff_receipt.is_file() else None,
+                        "receipt":handoff_value,
+                        "publisher_returncode":handoff_done.returncode,
+                        "stderr_tail":handoff_done.stderr[-1024:],
+                        "authority_effect":"NONE",
+                    }
     result={
         "schema_version":reg["organization"].lower().replace(" ","-")+".boundary-execution.v1",
         "packet_id":env["packet_id"],
@@ -214,7 +234,10 @@ def main():
         "receipts":receipts,
         "reconstruction":{
             "same_execution_required":True,
-            "status":"RECONSTRUCTED" if svc.get("boundary_role")=="BOUNDARY_LOCAL_DIAGNOSTIC" else "PENDING_MASTER_RECORDS",
+            "status":(
+                "RECONSTRUCTED" if svc.get("boundary_role")=="BOUNDARY_LOCAL_DIAGNOSTIC"
+                else ("PUBLISHED_TO_MASTER_RECORDS" if isinstance(application_result.get("master_records_handoff"),dict) and application_result["master_records_handoff"].get("receipt") else "PENDING_MASTER_RECORDS")
+            ),
             "terminal_receipt_id":prev
         }
     }
