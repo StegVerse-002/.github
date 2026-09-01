@@ -9,7 +9,7 @@ The experiment condition and its implementation/evaluation surfaces use separate
 
 ```text
 experiment condition: v0.3 — FROZEN / OPERATIVE FOR T0
-implementation: v0.7 — EVOLVING PRE-T0
+implementation: v0.8 — EVOLVING PRE-T0
 external evaluation: independent revision stream
 expanded protocol document: non-operative unless separately adopted
 ```
@@ -60,3 +60,14 @@ Source/implementation readiness is distinct from:
 - release/activation.
 
 Authority effect: NONE.
+
+
+## v0.8 implementation note — 2026-09-01
+
+Implementation v0.8 adds only evidence/custody plumbing outside the frozen principal-visible v0.3 condition:
+- canonical self-characterization artifact-set publication to Master Records;
+- dedicated Master Records custody/reconstruction intake;
+- explicit Master Records custody receipt sourcing for public observation;
+- frozen v0.3 contract binding correction in the org execution surface.
+
+No principal-visible input, resource, search behavior, action vocabulary, or stopping condition is changed.
