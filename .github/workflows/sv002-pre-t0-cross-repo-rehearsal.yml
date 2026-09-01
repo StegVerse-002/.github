@@ -1,0 +1,89 @@
+name: SV002 Pre-T0 Cross-Repo Rehearsal - Validation Only
+
+on:
+  pull_request:
+    paths:
+      - 'tests/sv002_pre_t0_cross_repo_rehearsal.py'
+      - '.github/workflows/sv002-pre-t0-cross-repo-rehearsal.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rehearse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout evaluation branch
+        uses: actions/checkout@v4
+
+      - name: Checkout frozen principal repository
+        uses: actions/checkout@v4
+        with:
+          repository: StegVerse-002/micro-node-runtime
+          ref: main
+          path: _deps/micro-node-runtime
+
+      - name: Checkout Master Records boundary
+        uses: actions/checkout@v4
+        with:
+          repository: master-records/.github
+          ref: main
+          path: _deps/master-records-github
+
+      - name: Checkout Master Records orchestration
+        uses: actions/checkout@v4
+        with:
+          repository: master-records/orchestration
+          ref: main
+          path: _deps/orchestration
+
+      - name: Checkout Master Records monitoring
+        uses: actions/checkout@v4
+        with:
+          repository: master-records/monitoring
+          ref: main
+          path: _deps/monitoring
+
+      - name: Checkout Labs observation runtime
+        uses: actions/checkout@v4
+        with:
+          repository: StegVerse-Labs/.github
+          ref: main
+          path: _deps/labs-github
+
+      - name: Checkout Site observer
+        uses: actions/checkout@v4
+        with:
+          repository: StegVerse-Labs/Site
+          ref: main
+          path: _deps/site
+
+      - name: Checkout SDK
+        uses: actions/checkout@v4
+        with:
+          repository: StegVerse-org/StegVerse-SDK
+          ref: main
+          path: _deps/sdk
+
+      - name: Run synthetic non-principal cross-repository rehearsal
+        run: |
+          python3 tests/sv002_pre_t0_cross_repo_rehearsal.py \
+            --micro _deps/micro-node-runtime \
+            --org . \
+            --master-github _deps/master-records-github \
+            --orchestration _deps/orchestration \
+            --monitoring _deps/monitoring \
+            --labs-github _deps/labs-github \
+            --site _deps/site \
+            --sdk _deps/sdk \
+            --report /tmp/sv002-pre-t0-rehearsal.json
+
+      - name: Upload rehearsal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sv002-pre-t0-cross-repo-rehearsal
+          path: /tmp/sv002-pre-t0-rehearsal.json
+          if-no-files-found: error
