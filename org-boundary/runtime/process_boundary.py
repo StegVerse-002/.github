@@ -49,6 +49,29 @@ def main():
         rid=hid(kind.lower(),subject)
         receipts.append({"kind":kind,"receipt_id":rid,"subject":svc["service_id"],"evidence_hash":hashlib.sha256(canon(subject)).hexdigest(),"previous_receipt_id":prev})
         prev=rid
+    if svc.get("service_id")=="stegverse-002.self-characterization" and application_result.get("state_root"):
+        state_root=Path(application_result["state_root"]).expanduser().resolve()
+        if state_root.is_dir():
+            boundary_bundle={
+                "schema":"stegverse.self-characterization-org-boundary-receipts/v0.1",
+                "experiment_id":"STEGVERSE-002-SELF-CHARACTERIZATION-001",
+                "packet_id":env["packet_id"],
+                "service_id":svc["service_id"],
+                "payload_sha256":base["payload_hash"],
+                "manifest_sha256":application_result.get("manifest_sha256"),
+                "receipts":receipts,
+                "authority_effect":env["transition"]["authority_effect"],
+                "authority_transfer_assumed":False,
+                "master_records_required":True,
+            }
+            boundary_bundle["bundle_sha256"]=hashlib.sha256(canon(boundary_bundle)).hexdigest()
+            target=state_root/"ORG_BOUNDARY_RECEIPTS.json"
+            if target.exists():
+                if load(target)!=boundary_bundle: raise SystemExit("org-boundary-receipt-write-once-collision")
+            else:
+                target.write_text(json.dumps(boundary_bundle,indent=2,sort_keys=True)+"\n")
+            application_result["org_boundary_receipts_path"]=str(target)
+            application_result["org_boundary_receipts_sha256"]=boundary_bundle["bundle_sha256"]
     result={
         "schema_version":reg["organization"].lower().replace(" ","-")+".boundary-execution.v1",
         "packet_id":env["packet_id"],

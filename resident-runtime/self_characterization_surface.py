@@ -165,6 +165,7 @@ def run(envelope_path: Path, entity_id: str) -> dict[str, Any]:
         "objective": str(manifest.get("objective") or ""),
     }
     env["STEGVERSE_SELF_CHARACTERIZATION_CAUSAL_INGRESS_JSON"] = json.dumps(causal_ingress, sort_keys=True, separators=(",", ":"))
+    state_root=Path(env.get("STEGVERSE_SELF_CHAR_STATE_ROOT",str(Path.home()/".stegverse/self-characterization-001"))).expanduser().resolve()
     completed = subprocess.run(
         ["python3", str(root / principal["launcher"])],
         cwd=root,
@@ -174,6 +175,16 @@ def run(envelope_path: Path, entity_id: str) -> dict[str, Any]:
         check=False,
         timeout=int(binding.get("timeout_seconds", 1900)),
     )
+    principal_status=None
+    for line in reversed(completed.stdout.splitlines()):
+        try:
+            candidate=json.loads(line)
+            if isinstance(candidate,dict):
+                principal_status=candidate
+                break
+        except Exception:
+            continue
+    replay_without_rerun=bool(isinstance(principal_status,dict) and principal_status.get("state")=="ALREADY_COMPLETED_NO_RERUN")
     result = {
         "schema": "stegverse.org-ai-self-characterization-execution/v1",
         "organization": binding["organization"],
@@ -182,7 +193,10 @@ def run(envelope_path: Path, entity_id: str) -> dict[str, Any]:
         "ingress_packet_id": envelope.get("packet_id"),
         "manifest_sha256": manifest.get("manifest_sha256"),
         "principal_repository": f"{principal['repository_organization']}/{principal['repository_name']}",
-        "principal_execution_attempted": True,
+        "state_root": str(state_root),
+        "principal_execution_attempted": not replay_without_rerun,
+        "principal_replay_without_rerun": replay_without_rerun,
+        "principal_status": principal_status,
         "returncode": completed.returncode,
         "stdout_tail": completed.stdout[-8192:],
         "stderr_tail": completed.stderr[-8192:],
