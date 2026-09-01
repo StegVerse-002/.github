@@ -76,6 +76,18 @@
       "boundary_role": "INTERNAL_ENDPOINT",
       "profile_status": "NEEDS_REPOSITORY_HANDOFF_RECONCILIATION",
       "runtime_required_for_consumption": true
+    },
+    {
+      "service_id": "stegverse-002.self-characterization",
+      "repository": "StegVerse-002/micro-node-runtime",
+      "boundary_role": "INTERNAL_ENDPOINT",
+      "profile_status": "ACTIVE",
+      "accepts": [
+        "REQUEST_SELF_CHARACTERIZATION"
+      ],
+      "endpoint_adapter": "resident-runtime/self_characterization_surface.py",
+      "entity_binding": "resident-runtime/self-characterization/stegverse-002.json",
+      "runtime_required_for_consumption": true
     }
   ],
   "boundary_rule": "Cross-organization ingress/egress semantics are defined by the organization boundary; endpoint authority remains transition-governed."
