@@ -79,30 +79,42 @@ def main():
     if not svc: raise SystemExit("unknown-service")
     base={"packet_id":env["packet_id"],"service_id":svc["service_id"],"payload_hash":hashlib.sha256(canon(env["payload"])).hexdigest()}
     live_path=None
+    prior_boundary_bundle=None
     if svc.get("service_id")=="stegverse-002.self-characterization":
         state_root=Path(os.environ.get("STEGVERSE_SELF_CHAR_STATE_ROOT",str(Path.home()/".stegverse/self-characterization-001"))).expanduser().resolve()
         state_root.mkdir(parents=True,exist_ok=True)
         live_path=state_root/"ORG_BOUNDARY_RECEIPTS.live.jsonl"
+        prior_bundle_path=state_root/"ORG_BOUNDARY_RECEIPTS.json"
         if live_path.exists():
-            raise SystemExit("org-boundary-live-receipt-write-once-collision")
+            if not prior_bundle_path.is_file():
+                raise SystemExit("org-boundary-partial-live-history-without-terminal-bundle")
+            prior_boundary_bundle=load(prior_bundle_path)
+            if prior_boundary_bundle.get("packet_id")!=env["packet_id"] or prior_boundary_bundle.get("payload_sha256")!=base["payload_hash"]:
+                raise SystemExit("org-boundary-receipt-write-once-collision")
+
     receipts=[]; prev=None
-    ingress_receipt=make_receipt("INGRESS_ACCEPTED",base,prev)
-    receipts.append(ingress_receipt); prev=ingress_receipt["receipt_id"]; append_live_receipt(live_path,ingress_receipt)
-    dispatched_receipt=make_receipt("DISPATCHED",base,prev)
-    receipts.append(dispatched_receipt); prev=dispatched_receipt["receipt_id"]; append_live_receipt(live_path,dispatched_receipt)
+    if prior_boundary_bundle is None:
+        ingress_receipt=make_receipt("INGRESS_ACCEPTED",base,prev)
+        receipts.append(ingress_receipt); prev=ingress_receipt["receipt_id"]; append_live_receipt(live_path,ingress_receipt)
+        dispatched_receipt=make_receipt("DISPATCHED",base,prev)
+        receipts.append(dispatched_receipt); prev=dispatched_receipt["receipt_id"]; append_live_receipt(live_path,dispatched_receipt)
 
     application_result=endpoint_result(env,svc,a.envelope)
     disposition=str(application_result.get("state") or "UNKNOWN")
-    consumed_receipt=make_receipt("CONSUMED",base,prev,disposition=disposition)
-    receipts.append(consumed_receipt); prev=consumed_receipt["receipt_id"]; append_live_receipt(live_path,consumed_receipt)
-    result_receipt=make_receipt("RESULT_BOUND",base,prev,disposition=disposition)
-    receipts.append(result_receipt); prev=result_receipt["receipt_id"]; append_live_receipt(live_path,result_receipt)
-    egress_receipt=make_receipt("EGRESS_EMITTED",base,prev,disposition=disposition)
-    receipts.append(egress_receipt); prev=egress_receipt["receipt_id"]; append_live_receipt(live_path,egress_receipt)
+    if prior_boundary_bundle is not None:
+        receipts=list(prior_boundary_bundle.get("receipts") or [])
+        prev=receipts[-1].get("receipt_id") if receipts else None
+    else:
+        consumed_receipt=make_receipt("CONSUMED",base,prev,disposition=disposition)
+        receipts.append(consumed_receipt); prev=consumed_receipt["receipt_id"]; append_live_receipt(live_path,consumed_receipt)
+        result_receipt=make_receipt("RESULT_BOUND",base,prev,disposition=disposition)
+        receipts.append(result_receipt); prev=result_receipt["receipt_id"]; append_live_receipt(live_path,result_receipt)
+        egress_receipt=make_receipt("EGRESS_EMITTED",base,prev,disposition=disposition)
+        receipts.append(egress_receipt); prev=egress_receipt["receipt_id"]; append_live_receipt(live_path,egress_receipt)
     if svc.get("service_id")=="stegverse-002.self-characterization" and application_result.get("state_root"):
         state_root=Path(application_result["state_root"]).expanduser().resolve()
         if state_root.is_dir():
-            boundary_bundle={
+            boundary_bundle=prior_boundary_bundle or {
                 "schema":"stegverse.self-characterization-org-boundary-receipts/v0.2",
                 "experiment_id":"STEGVERSE-002-SELF-CHARACTERIZATION-001",
                 "packet_id":env["packet_id"],
