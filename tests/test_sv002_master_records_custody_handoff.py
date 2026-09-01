@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+import hashlib,json,os,subprocess,tempfile,unittest
+from pathlib import Path
+
+ROOT=Path(__file__).resolve().parents[1]
+SCRIPT=ROOT/"resident-runtime/submit_sv002_self_characterization_to_master_records.py"
+REQUIRED=(
+    "S0.json","EXPERIMENT_EXECUTION_RECEIPT.json","SELF_CHARACTERIZATION.md",
+    "SELF_CHARACTERIZATION_FORMAL.json","INTERACTION_RECEIPT_CHAIN.json",
+    "TRANSITION_EFFECTS.json","TRANSITION_RECEIPTS.json","TRANSITION_RECEIPTS.live.jsonl",
+    "ORG_BOUNDARY_RECEIPTS.json","ORG_BOUNDARY_RECEIPTS.live.jsonl",
+    "REPOSITORY_LEDGER_ROOT.json","ORGANIZATION_LEDGER_ROOT.json",
+)
+
+class TestSV002MasterRecordsCustodyHandoff(unittest.TestCase):
+    def test_publishes_once_without_rerunning_principal(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); state=root/"state"; state.mkdir(); mesh=root/"mesh"
+            run_id="SV002-RUN-"+"a"*32
+            for name in REQUIRED:
+                p=state/name
+                if name=="S0.json":
+                    value={"experiment_id":"STEGVERSE-002-SELF-CHARACTERIZATION-001","run_id":run_id}
+                    p.write_text(json.dumps(value),encoding="utf-8")
+                elif name=="EXPERIMENT_EXECUTION_RECEIPT.json":
+                    value={"schema":"stegverse.self-characterization-execution-receipt/v0.3","experiment_id":"STEGVERSE-002-SELF-CHARACTERIZATION-001","run_id":run_id,"state":"COMPLETED","principal_run_completed":True}
+                    p.write_text(json.dumps(value),encoding="utf-8")
+                elif name=="ORGANIZATION_LEDGER_ROOT.json":
+                    p.write_text(json.dumps({"root_hash":"b"*64}),encoding="utf-8")
+                elif name.endswith(".jsonl"):
+                    p.write_text("{}\n",encoding="utf-8")
+                else:
+                    p.write_text("{}\n" if name.endswith(".json") else "result\n",encoding="utf-8")
+            env=dict(os.environ);env["STEGVERSE_ORG_FEDERATION_ROOT"]=str(mesh)
+            first=subprocess.run(["python3",str(SCRIPT),"--state-root",str(state)],cwd=ROOT,env=env,capture_output=True,text=True,check=False)
+            self.assertEqual(first.returncode,0,first.stderr)
+            receipt=json.loads((state/"MASTER_RECORDS_CUSTODY_HANDOFF.json").read_text())
+            self.assertEqual(receipt["state"],"PUBLISHED_FOR_MASTER_RECORDS_CUSTODY")
+            self.assertFalse(receipt["principal_rerun_required"])
+            frames=list((mesh/"frames.d").glob("*.json"))
+            self.assertEqual(len(frames),1)
+            second=subprocess.run(["python3",str(SCRIPT),"--state-root",str(state)],cwd=ROOT,env=env,capture_output=True,text=True,check=False)
+            self.assertEqual(second.returncode,0,second.stderr)
+            self.assertEqual(json.loads(second.stdout)["state"],"ALREADY_PUBLISHED_NO_REPUBLISH")
+            self.assertEqual(len(list((mesh/"frames.d").glob("*.json"))),1)
+
+if __name__=="__main__": unittest.main()
