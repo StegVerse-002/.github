@@ -132,3 +132,19 @@ INGRESS_ACCEPTED
 Each boundary receipt carries `observed_at`; post-endpoint receipts carry the exact application disposition so transport completion cannot be confused with principal completion. The terminal bundle is v0.2 and references the live JSONL receipt log.
 
 The browser/public surfaces and Master Records verifier must consume the same canonical experiment ID `STEGVERSE-002-SELF-CHARACTERIZATION-001`. Runtime observation remains pending.
+
+
+## Version-domain control — 2026-09-01
+
+Canonical version-domain control is now explicit in `docs/SV002_EXPERIMENT_VERSION_DOMAINS.md`.
+
+```text
+experiment condition: v0.3 FROZEN / OPERATIVE
+implementation: v0.7 PRE-T0 / EVOLVING
+external evaluation: separate revision stream
+expanded protocol document: NON-OPERATIVE unless separately adopted
+```
+
+Implementation revisions may repair execution, reconstruction, custody routing, observer projection, viewer verification, and fail-closed behavior without changing the experiment-condition version. Any change to the principal-visible objective, system interface, discovery/read surface, search semantics that alter the discovery condition, permitted actions, stopping semantics, subject-visible identity information, or frozen snapshot content requires a new experiment-condition version.
+
+This declaration is evaluator/control-plane metadata only and is not principal input, searchable content, or readable experiment material.
