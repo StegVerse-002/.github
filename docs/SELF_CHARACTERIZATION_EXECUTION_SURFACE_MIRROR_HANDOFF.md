@@ -198,7 +198,7 @@ The frozen experiment condition is now bound to a commit-pinned cross-repository
 releases/SV002_SELF_CHARACTERIZATION_V0.3_T0_RELEASE_MANIFEST.json
 manifest commit: 52d50a682a78cde981eccde895091a1eabbe2383
 proposed common tag: sv002-exp-v0.3-t0-20260901
-release class: EXPERIMENT_SNAPSHOT_PRERELEASE
+release class: EXPERIMENT_SNAPSHOT_RELEASE
 authority_effect: NONE
 activation claim: false
 product release claim: false
@@ -232,3 +232,23 @@ Canonical machine-readable state is retained in `releases/SV002_SELF_CHARACTERIZ
 This discrepancy is metadata-only. It does not alter the frozen v0.3 condition, tag identities, source pins, principal execution state, SYSTEM_AI_ACTIVE, Master Records custody/reconstruction, activation, deployment, or product release state.
 
 The connected GitHub mutation surface can read release/tag metadata but cannot update GitHub release metadata. Do not substitute a branch or source-file edit for changing `prerelease` on the actual GitHub releases.
+
+## T0 release-class governance reconciliation — 2026-09-02
+
+Governance decision: OPTION B — accept the ten existing standard GitHub releases and reconcile the canonical snapshot class to `EXPERIMENT_SNAPSHOT_RELEASE`.
+
+Canonical effect:
+
+```text
+prior declared class: EXPERIMENT_SNAPSHOT_PRERELEASE
+current declared class: EXPERIMENT_SNAPSHOT_RELEASE
+GitHub prerelease metadata required: false
+observed GitHub prerelease metadata: false
+metadata conformance: true
+release execution state: RELEASES_PRESENT_METADATA_CONFORMANT
+authority_effect: NONE
+```
+
+This is a metadata/classification reconciliation only. The frozen v0.3 experiment condition, exact tags, pinned commits, release identities, source/evidence roles, and all authority boundaries are unchanged.
+
+`EXPERIMENT_SNAPSHOT_RELEASE` is not a product release class. It does not assert principal execution, `SYSTEM_AI_ACTIVE`, custody, reconstruction PASS, runtime activation, deployment, production release, admissibility, or Guardian enforcement.
