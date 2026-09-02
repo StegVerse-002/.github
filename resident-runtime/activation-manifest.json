@@ -3,7 +3,7 @@
   "organization": "StegVerse-002",
   "canonical_repository": "StegVerse-002/.github",
   "activation_owner": "StegVerse-002/.github",
-  "entrypoint": "resident-runtime/run_once.py",
+  "entrypoint": "resident-runtime/resident_executor.py",
   "ingress_egress_owner": "StegVerse-002/.github",
   "intr_transport": "org-boundary/runtime/intr_transport.py",
   "boundary_processor": "org-boundary/runtime/process_boundary.py",
@@ -24,8 +24,8 @@
   "federation_gateway_url_env": "STEGVERSE_ORG_FEDERATION_GATEWAY_URL",
   "federation_gateway_required_for_cross_host": true,
   "local_spool_scope": "SAME_HOST_FALLBACK_ONLY",
-  "resident_cycle_entrypoint": "resident-runtime/federation_cycle.py",
-  "federation_poll_mode": "OUTBOUND_ONLY",
+  "resident_cycle_entrypoint": "resident-runtime/resident_executor.py",
+  "federation_poll_mode": "CONTINUOUS_BIDIRECTIONAL",
   "federation_network_route": "SHARED_SERVICE_GATEWAY",
   "self_characterization_surface": {
     "state": "SOURCE_INSTALLED",
@@ -35,5 +35,12 @@
     "principal_repository": "StegVerse-002/micro-node-runtime",
     "cross_organization_principal_execution_allowed": false,
     "master_records_required": true
+  },
+  "persistent_executor": {
+    "state": "SOURCE_INSTALLED_ACTIVATION_EVIDENCE_PENDING",
+    "implementation": "resident-runtime/resident_executor.py",
+    "restart_policy": "ALWAYS",
+    "service_template": "resident-runtime/systemd/stegverse-002-resident.service",
+    "github_actions_runtime_authority": "NONE"
   }
 }
