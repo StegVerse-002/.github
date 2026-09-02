@@ -1,0 +1,85 @@
+{
+  "schema": "stegverse.sv002-experiment-t0-release-manifest/v1",
+  "experiment_id": "STEGVERSE-002-SELF-CHARACTERIZATION-001",
+  "experiment_condition_version": "v0.3",
+  "experiment_condition_state": "FROZEN",
+  "scheduled_t0": "2026-09-02T01:00:00Z",
+  "release_class": "EXPERIMENT_SNAPSHOT_PRERELEASE",
+  "proposed_tag": "sv002-exp-v0.3-t0-20260901",
+  "authority_effect": "NONE",
+  "activation_claim": false,
+  "product_release_claim": false,
+  "principal_execution_claim": false,
+  "master_records_reconstruction_claim": false,
+  "release_note": "Immutable pre-T0 experiment snapshot. This tag/release identifies the frozen v0.3 condition and its supporting execution/evidence surfaces only. It does not assert resident execution, system activation, custody completion, reconstruction PASS, or product release.",
+  "authoritative_snapshot_repositories": [
+    {
+      "repository": "StegVerse-002/micro-node-runtime",
+      "sha": "64c87a7878b5ed8c36ea2ecf32548ccb33b0b277",
+      "role": "frozen subject contract, principal runtime, experiment artifacts"
+    },
+    {
+      "repository": "StegVerse-002/.github",
+      "sha": "768b7564152b927250df386448c60b930d6d57ea",
+      "role": "organization boundary and v0.9 pre-T0 control/evaluator"
+    },
+    {
+      "repository": "StegVerse-Labs/.github",
+      "sha": "f72bd7551bd47437f2306aba1f009e1a07603e1f",
+      "role": "resident worker/runtime orchestration and custody-only observation projection"
+    },
+    {
+      "repository": "StegVerse-org/.github",
+      "sha": "13a5b28f856d57c71ad61f48874f5bb2828d5a4d",
+      "role": "SDK organization ingress/egress and transition-receipt routing"
+    },
+    {
+      "repository": "StegVerse-org/StegVerse-SDK",
+      "sha": "08c5d15eb4d26733f2ad54f93e1286c51f5f66a3",
+      "role": "v0.3 SDK transition receipt alignment"
+    },
+    {
+      "repository": "master-records/.github",
+      "sha": "b66e9490878b9a48267d760706ac818eefd0f610",
+      "role": "SV002 canonical custody intake"
+    },
+    {
+      "repository": "master-records/orchestration",
+      "sha": "8191d40bc36be8e766f989a25b2f238fdd800e2d",
+      "role": "canonical reconstruction and ordered evidence projection"
+    },
+    {
+      "repository": "StegVerse-Labs/Site",
+      "sha": "342cacaa04a060a35588c75aad0e6087f1246dd0",
+      "role": "public observer/projection surface"
+    },
+    {
+      "repository": "StegVerse-002/core-lite",
+      "sha": "abf1c16e0f7f7e2cb6d2f3cb0936a4470add6e65",
+      "role": "explicit SV002 source-readiness baseline"
+    }
+  ],
+  "supporting_not_condition_defining": [
+    {
+      "repository": "master-records/monitoring",
+      "sha": "4ee0443abdece02c1170e695cc785c811868a9d1",
+      "role": "read-only sequence/reference projection"
+    },
+    {
+      "repository": "StegVerse-org/LLM-adapter",
+      "sha": "6b1c3237d1efae813b8ea8505cd042baf5a209ad",
+      "role": "supporting governed observation/inference integration; not frozen condition authority"
+    }
+  ],
+  "release_execution": {
+    "state": "PENDING",
+    "reason": "Current connected GitHub action surface can inspect releases and mutate repository files/issues but exposes no create-tag/create-release operation. Do not substitute branch creation for a Git tag.",
+    "required_execution_authority": "existing sovereign/local release tooling under current repository/TV-TVC release policy"
+  },
+  "post_snapshot_verification_destinations": [
+    "StegVerse-Labs/Site",
+    "GCAT-BCAT-Engine/Publisher",
+    "StegVerse-Labs/admissibility-wiki",
+    "StegVerse-002/stegguardian-wiki"
+  ]
+}
