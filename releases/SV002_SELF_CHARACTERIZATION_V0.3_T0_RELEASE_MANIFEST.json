@@ -4,14 +4,14 @@
   "experiment_condition_version": "v0.3",
   "experiment_condition_state": "FROZEN",
   "scheduled_t0": "2026-09-02T01:00:00Z",
-  "release_class": "EXPERIMENT_SNAPSHOT_PRERELEASE",
+  "release_class": "EXPERIMENT_SNAPSHOT_RELEASE",
   "proposed_tag": "sv002-exp-v0.3-t0-20260901",
   "authority_effect": "NONE",
   "activation_claim": false,
   "product_release_claim": false,
   "principal_execution_claim": false,
   "master_records_reconstruction_claim": false,
-  "release_note": "Immutable pre-T0 experiment snapshot. This tag/release identifies the frozen v0.3 condition and its supporting execution/evidence surfaces only. It does not assert resident execution, system activation, custody completion, reconstruction PASS, or product release.",
+  "release_note": "Immutable T0 experiment snapshot release. This tag/release identifies the frozen v0.3 condition and its supporting execution/evidence surfaces only. GitHub prerelease metadata is not required for this release class. It does not assert resident execution, system activation, custody completion, reconstruction PASS, deployment, or product release.",
   "authoritative_snapshot_repositories": [
     {
       "repository": "StegVerse-002/micro-node-runtime",
@@ -72,26 +72,27 @@
     }
   ],
   "release_execution": {
-    "state": "RELEASES_PRESENT_METADATA_MISMATCH",
+    "state": "RELEASES_PRESENT_METADATA_CONFORMANT",
     "verified_at": "2026-09-02",
     "tag_count_verified": 10,
     "release_count_verified": 10,
     "all_tag_refs_match_manifest_pins": true,
     "all_releases_exist": true,
-    "intended_release_class": "EXPERIMENT_SNAPSHOT_PRERELEASE",
+    "intended_release_class": "EXPERIMENT_SNAPSHOT_RELEASE",
     "observed_github_prerelease": false,
-    "metadata_conformance": false,
-    "mismatch": "All ten GitHub releases currently report prerelease=false although the manifest release_class remains EXPERIMENT_SNAPSHOT_PRERELEASE.",
+    "metadata_conformance": true,
+    "mismatch": null,
     "authority_effect": "NONE",
     "activation_claim": false,
     "product_release_claim": false,
     "principal_execution_claim": false,
     "master_records_reconstruction_claim": false,
     "release_metadata_mutation_available_in_current_connector": false,
-    "resolution_options": [
-      "convert the ten GitHub releases to prerelease=true using sanctioned release authority",
-      "explicitly accept standard GitHub release metadata and revise the manifest release class in a separately governed decision"
-    ]
+    "resolution_options": [],
+    "governance_decision": "OPTION_B_ACCEPT_STANDARD_GITHUB_RELEASE_METADATA",
+    "governance_decision_at": "2026-09-02",
+    "prior_release_class": "EXPERIMENT_SNAPSHOT_PRERELEASE",
+    "release_metadata_mutation_required": false
   },
   "post_snapshot_verification_destinations": [
     "StegVerse-Labs/Site",
