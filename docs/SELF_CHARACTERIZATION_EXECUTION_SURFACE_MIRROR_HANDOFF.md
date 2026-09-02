@@ -188,3 +188,35 @@ Runtime readiness is a separate gate. `READY_FOR_T0` additionally requires:
 - empty canonical principal state root.
 
 The readiness receipt always declares `principal_executed=false` and `authority_effect=NONE`. Source or rehearsal PASS cannot substitute for authentic runtime identity/host evidence.
+
+
+## v0.3 T0 experiment snapshot release preparation — 2026-09-01
+
+The frozen experiment condition is now bound to a commit-pinned cross-repository snapshot manifest:
+
+```text
+releases/SV002_SELF_CHARACTERIZATION_V0.3_T0_RELEASE_MANIFEST.json
+manifest commit: 52d50a682a78cde981eccde895091a1eabbe2383
+proposed common tag: sv002-exp-v0.3-t0-20260901
+release class: EXPERIMENT_SNAPSHOT_PRERELEASE
+authority_effect: NONE
+activation claim: false
+product release claim: false
+principal execution claim: false
+Master Records reconstruction claim: false
+```
+
+The manifest pins the authoritative pre-T0 source/evidence surfaces for the frozen v0.3 experiment condition and distinguishes supporting integrations from condition-defining repositories.
+
+Actual Git tag/GitHub prerelease creation remains pending under issue #19 because the currently connected GitHub mutation surface exposes repository file/issue writes but no create-tag/create-release operation. A branch MUST NOT be substituted for a Git tag. Existing repository and TV/TVC release authority remains unchanged.
+
+Post-snapshot projection verification is tracked by issue #20 for:
+
+```text
+StegVerse-Labs/Site
+GCAT-BCAT-Engine/Publisher
+StegVerse-Labs/admissibility-wiki
+StegVerse-002/stegguardian-wiki
+```
+
+The snapshot tag/release, when created, is evidence identity only. It MUST NOT be interpreted as authentic principal execution, SYSTEM_AI_ACTIVE, Master Records custody/reconstruction completion, runtime activation, deployment, or production release.
