@@ -1,0 +1,15 @@
+[Unit]
+Description=StegVerse-002 resident executor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/var/lib/stegverse/source/StegVerse-002/.github
+ExecStart=/usr/bin/python3 /var/lib/stegverse/source/StegVerse-002/.github/resident-runtime/resident_executor.py --poll-seconds 1
+Restart=always
+RestartSec=1
+EnvironmentFile=-/etc/stegverse/resident.env
+
+[Install]
+WantedBy=multi-user.target
