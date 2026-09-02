@@ -72,14 +72,153 @@
     }
   ],
   "release_execution": {
-    "state": "PENDING",
-    "reason": "Current connected GitHub action surface can inspect releases and mutate repository files/issues but exposes no create-tag/create-release operation. Do not substitute branch creation for a Git tag.",
-    "required_execution_authority": "existing sovereign/local release tooling under current repository/TV-TVC release policy"
+    "state": "RELEASES_PRESENT_METADATA_MISMATCH",
+    "verified_at": "2026-09-02",
+    "tag_count_verified": 10,
+    "release_count_verified": 10,
+    "all_tag_refs_match_manifest_pins": true,
+    "all_releases_exist": true,
+    "intended_release_class": "EXPERIMENT_SNAPSHOT_PRERELEASE",
+    "observed_github_prerelease": false,
+    "metadata_conformance": false,
+    "mismatch": "All ten GitHub releases currently report prerelease=false although the manifest release_class remains EXPERIMENT_SNAPSHOT_PRERELEASE.",
+    "authority_effect": "NONE",
+    "activation_claim": false,
+    "product_release_claim": false,
+    "principal_execution_claim": false,
+    "master_records_reconstruction_claim": false,
+    "release_metadata_mutation_available_in_current_connector": false,
+    "resolution_options": [
+      "convert the ten GitHub releases to prerelease=true using sanctioned release authority",
+      "explicitly accept standard GitHub release metadata and revise the manifest release class in a separately governed decision"
+    ]
   },
   "post_snapshot_verification_destinations": [
     "StegVerse-Labs/Site",
     "GCAT-BCAT-Engine/Publisher",
     "StegVerse-Labs/admissibility-wiki",
     "StegVerse-002/stegguardian-wiki"
+  ],
+  "verified_releases": [
+    {
+      "repository": "StegVerse-002/micro-node-runtime",
+      "sha": "64c87a7878b5ed8c36ea2ecf32548ccb33b0b277",
+      "tag": "sv002-exp-v0.3-t0-20260901",
+      "release_id": 380909153,
+      "published_at": "2026-09-02T00:43:12Z",
+      "tag_ref_matches_expected_sha": true,
+      "release_exists": true,
+      "draft": false,
+      "github_prerelease": false,
+      "release_url": "https://github.com/StegVerse-002/micro-node-runtime/releases/tag/sv002-exp-v0.3-t0-20260901"
+    },
+    {
+      "repository": "StegVerse-002/.github",
+      "sha": "768b7564152b927250df386448c60b930d6d57ea",
+      "tag": "sv002-exp-v0.3-t0-20260901",
+      "release_id": 380909532,
+      "published_at": "2026-09-02T00:44:29Z",
+      "tag_ref_matches_expected_sha": true,
+      "release_exists": true,
+      "draft": false,
+      "github_prerelease": false,
+      "release_url": "https://github.com/StegVerse-002/.github/releases/tag/sv002-exp-v0.3-t0-20260901"
+    },
+    {
+      "repository": "StegVerse-Labs/.github",
+      "sha": "f72bd7551bd47437f2306aba1f009e1a07603e1f",
+      "tag": "sv002-exp-v0.3-t0-20260901",
+      "release_id": 380910734,
+      "published_at": "2026-09-02T00:48:44Z",
+      "tag_ref_matches_expected_sha": true,
+      "release_exists": true,
+      "draft": false,
+      "github_prerelease": false,
+      "release_url": "https://github.com/StegVerse-Labs/.github/releases/tag/sv002-exp-v0.3-t0-20260901"
+    },
+    {
+      "repository": "StegVerse-org/.github",
+      "sha": "13a5b28f856d57c71ad61f48874f5bb2828d5a4d",
+      "tag": "sv002-exp-v0.3-t0-20260901",
+      "release_id": 380912120,
+      "published_at": "2026-09-02T00:53:02Z",
+      "tag_ref_matches_expected_sha": true,
+      "release_exists": true,
+      "draft": false,
+      "github_prerelease": false,
+      "release_url": "https://github.com/StegVerse-org/.github/releases/tag/sv002-exp-v0.3-t0-20260901"
+    },
+    {
+      "repository": "StegVerse-org/StegVerse-SDK",
+      "sha": "08c5d15eb4d26733f2ad54f93e1286c51f5f66a3",
+      "tag": "sv002-exp-v0.3-t0-20260901",
+      "release_id": 380912626,
+      "published_at": "2026-09-02T00:54:32Z",
+      "tag_ref_matches_expected_sha": true,
+      "release_exists": true,
+      "draft": false,
+      "github_prerelease": false,
+      "release_url": "https://github.com/StegVerse-org/StegVerse-SDK/releases/tag/sv002-exp-v0.3-t0-20260901"
+    },
+    {
+      "repository": "master-records/.github",
+      "sha": "b66e9490878b9a48267d760706ac818eefd0f610",
+      "tag": "sv002-exp-v0.3-t0-20260901",
+      "release_id": 380911170,
+      "published_at": "2026-09-02T00:49:58Z",
+      "tag_ref_matches_expected_sha": true,
+      "release_exists": true,
+      "draft": false,
+      "github_prerelease": false,
+      "release_url": "https://github.com/master-records/.github/releases/tag/sv002-exp-v0.3-t0-20260901"
+    },
+    {
+      "repository": "master-records/orchestration",
+      "sha": "8191d40bc36be8e766f989a25b2f238fdd800e2d",
+      "tag": "sv002-exp-v0.3-t0-20260901",
+      "release_id": 380911723,
+      "published_at": "2026-09-02T00:51:46Z",
+      "tag_ref_matches_expected_sha": true,
+      "release_exists": true,
+      "draft": false,
+      "github_prerelease": false,
+      "release_url": "https://github.com/master-records/orchestration/releases/tag/sv002-exp-v0.3-t0-20260901"
+    },
+    {
+      "repository": "StegVerse-Labs/Site",
+      "sha": "342cacaa04a060a35588c75aad0e6087f1246dd0",
+      "tag": "sv002-exp-v0.3-t0-20260901",
+      "release_id": 380910317,
+      "published_at": "2026-09-02T00:47:23Z",
+      "tag_ref_matches_expected_sha": true,
+      "release_exists": true,
+      "draft": false,
+      "github_prerelease": false,
+      "release_url": "https://github.com/StegVerse-Labs/Site/releases/tag/sv002-exp-v0.3-t0-20260901"
+    },
+    {
+      "repository": "StegVerse-002/core-lite",
+      "sha": "abf1c16e0f7f7e2cb6d2f3cb0936a4470add6e65",
+      "tag": "sv002-exp-v0.3-t0-20260901",
+      "release_id": 380909973,
+      "published_at": "2026-09-02T00:46:03Z",
+      "tag_ref_matches_expected_sha": true,
+      "release_exists": true,
+      "draft": false,
+      "github_prerelease": false,
+      "release_url": "https://github.com/StegVerse-002/core-lite/releases/tag/sv002-exp-v0.3-t0-20260901"
+    },
+    {
+      "repository": "master-records/monitoring",
+      "sha": "4ee0443abdece02c1170e695cc785c811868a9d1",
+      "tag": "sv002-exp-v0.3-t0-20260901",
+      "release_id": 380913750,
+      "published_at": "2026-09-02T00:58:02Z",
+      "tag_ref_matches_expected_sha": true,
+      "release_exists": true,
+      "draft": false,
+      "github_prerelease": false,
+      "release_url": "https://github.com/master-records/monitoring/releases/tag/sv002-exp-v0.3-t0-20260901"
+    }
   ]
 }
