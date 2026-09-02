@@ -220,3 +220,15 @@ StegVerse-002/stegguardian-wiki
 ```
 
 The snapshot tag/release, when created, is evidence identity only. It MUST NOT be interpreted as authentic principal execution, SYSTEM_AI_ACTIVE, Master Records custody/reconstruction completion, runtime activation, deployment, or production release.
+
+## T0 release/tag live reconciliation — 2026-09-02
+
+Independent GitHub API verification now establishes that all ten required snapshot tags/releases exist and each tag ref resolves to its exact manifest-pinned commit.
+
+However, all ten GitHub releases currently report `prerelease=false` while the intended manifest class remains `EXPERIMENT_SNAPSHOT_PRERELEASE`.
+
+Canonical machine-readable state is retained in `releases/SV002_SELF_CHARACTERIZATION_V0.3_T0_RELEASE_MANIFEST.json` as `RELEASES_PRESENT_METADATA_MISMATCH`.
+
+This discrepancy is metadata-only. It does not alter the frozen v0.3 condition, tag identities, source pins, principal execution state, SYSTEM_AI_ACTIVE, Master Records custody/reconstruction, activation, deployment, or product release state.
+
+The connected GitHub mutation surface can read release/tag metadata but cannot update GitHub release metadata. Do not substitute a branch or source-file edit for changing `prerelease` on the actual GitHub releases.
