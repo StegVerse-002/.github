@@ -141,32 +141,44 @@ The readiness receipt declares `principal_executed=false` and `authority_effect=
 
 The frozen experiment condition is bound to `releases/SV002_SELF_CHARACTERIZATION_V0.3_T0_RELEASE_MANIFEST.json`. The ten snapshot tags/releases were reconciled to `EXPERIMENT_SNAPSHOT_RELEASE`; this is evidence identity only and is not a product release, principal-execution claim, `SYSTEM_AI_ACTIVE` claim, custody claim, reconstruction PASS, runtime activation, deployment, admissibility, or Guardian-enforcement claim.
 
-## Native current-iPhone organization execution envelope — issue #23 / 2026-09-06
+## Native current-iPhone organization execution envelope — released 2026-09-06
 
-The final physical-substrate direction reuses the released native resident-loopback implementation on `CURRENT_USER_IPHONE` while preserving this repository as target-organization execution owner.
+Issue #23 / PR #24 released the target-owned portable organization-execution envelope while preserving `StegVerse-002/.github` as the target principal execution owner.
 
-Released dependencies already exist outside this repository:
+Release identity:
+
+```text
+validated PR head: 44472f699fb820748336731bfd161a31f6f97276
+merge: 94a14a67c1b7044aaac4381ea5be0762e505c617
+Org Boundary Execution validation: 34014887434 SUCCESS
+```
+
+The exact-head validation ran the existing organization boundary, hierarchical-ledger, Master Records handoff and pre-T0 readiness regressions plus all six native-envelope tests. No existing boundary regression failed.
+
+Released dependencies outside this repository:
 
 ```text
 formal model/package/resource authority:
   StegVerse-002/micro-node-runtime
+  resource-bundle source release ff106687106ad74d5fa58795ecbfbc65c6961f3f
 
 physical host/backend/offline resource harness:
   StegVerse-Labs/StegOS
-  host/backend/harness release state through 9801e3adaaa3b231f1876c0cb4a1ff45caf3e215
+  source-native-chain release state 9801e3adaaa3b231f1876c0cb4a1ff45caf3e215
 
 existing resident request:
   RESIDENT-EXEC-SV002-ORG-RUNTIME-ACTIVATION-001
   task SHWP-SV002-ORG-RUNTIME-ACTIVATION-001
 ```
 
-Issue #23 adds only a target-owned portable execution-envelope contract:
+Released issue #23 surfaces:
 
 ```text
 schemas/sv002-native-org-execution-envelope.schema.json
 resident-runtime/validate_sv002_native_org_execution_envelope.py
 tests/test_sv002_native_org_execution_envelope.py
 README.md
+.github/workflows/org-boundary-execution.yml
 ```
 
 Schema:
@@ -192,16 +204,16 @@ The envelope binds:
 
 The envelope's authority effect is `NONE_EXECUTION_REQUEST_ONLY`. Its existence, validation, merge, publication, or delivery does not grant execution authority. It is consumable only after the preexisting WorkerCoordinator/InTr admission and physical-device predicates are satisfied.
 
-The real resource-bundle SHA-256 is intentionally a required late binding. Source must not invent it before the exact TT/RTG/GTG/AE + organization-capability bundle bytes are materially assembled and verified.
+The real resource-bundle SHA-256 remains an intentionally required late binding. Source must not invent it before the exact TT/RTG/GTG/AE + organization-capability bundle bytes are materially assembled and verified.
 
 ## README completeness — issue #23
 
-This repository previously had no root `README.md`. Because issue #23 materially changes supported execution-interface semantics, a root README is created in the same change rather than silently waiving the completeness predicate.
+This repository previously had no root `README.md`. Issue #23 materially changed supported execution-interface semantics, so a root README was created in the same functional change. The release-state reconciliation is documentation-only and requires no additional README mutation.
 
 ## Current runtime truth
 
 ```text
-native organization execution-envelope schema/validator: SOURCE IMPLEMENTED / VALIDATION PENDING
+native organization execution-envelope schema/validator: COMPLETE / RELEASED SOURCE
 real frozen resource bundle bytes: NOT OBSERVED
 native execution envelope with real bundle SHA: NOT MATERIALIZED
 native envelope delivered to current iPhone: NOT OBSERVED
@@ -218,4 +230,4 @@ Source installation, CI, merge, release, heartbeat progression, or static envelo
 
 ## Next action
 
-Validate issue #23 on exact repository head and release the source contract if green. After that, the remaining integration work is to materialize the real frozen resource bundle, bind its exact SHA into an admitted envelope, add the matching StegOS-side envelope consumer without creating a second runtime/host/request, deliver the exact package/model/bundle/envelope to `CURRENT_USER_IPHONE`, and obtain authentic same-execution evidence through organization egress and Master Records reconstruction.
+Add the matching StegOS-side consumer for the released target-owned envelope without creating a second runtime, listener, request, principal identity, scheduler, WorkerCoordinator, or credential path. Separately resolve real frozen-resource bundle materialization, bind its exact SHA into an admitted envelope, deliver exact package/model/bundle/envelope to `CURRENT_USER_IPHONE`, and obtain authentic same-execution evidence through organization egress and Master Records reconstruction.
