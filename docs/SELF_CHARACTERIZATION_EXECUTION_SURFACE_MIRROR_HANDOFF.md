@@ -1,7 +1,7 @@
 # Organization AI Self-Characterization Execution Surface Mirror Handoff
 
 Status: ACTIVE
-Updated: 2026-09-01
+Updated: 2026-09-06
 Organization: StegVerse-002
 Repository: StegVerse-002/.github
 
@@ -33,7 +33,7 @@ Canonical reusable implementation:
 - `resident-runtime/self_characterization_surface.py`
 - per-entity bindings under `resident-runtime/self-characterization/*.json`
 
-The implementation is intended to be vendored into any organization `.github` and rebound to an AI entity owned by that organization.
+The historical/resident implementation remains valid source, but its Python/local-repository subprocess path is not the final `CURRENT_USER_IPHONE` execution path because the user-operated topology may not require another machine.
 
 Invariant:
 - execution owner = `<ENTITY_ORG>/.github`;
@@ -58,14 +58,9 @@ The frozen principal objective, resource policy, runtime identity verification, 
 
 StegVerse-002 is the event source and receipt issuer. Master Records is the canonical custody/reconstruction surface. Other organizations may consume Master Records-derived evidence but must not maintain a competing privileged observation history of StegVerse-002 internal state.
 
-## Remaining runtime evidence
-
-Source installation does not establish a live request, principal execution, egress, custody, or reconstruction. Those remain evidence transitions.
-
-
 ## Boundary receipt custody binding — 2026-09-01
 
-The organization boundary now persists `ORG_BOUNDARY_RECEIPTS.json` into the same principal evidence root after the self-characterization endpoint returns. The bundle hash-binds the exact ingress packet, manifest hash, payload hash, and the five org-boundary transitions:
+The organization boundary persists `ORG_BOUNDARY_RECEIPTS.json` into the same principal evidence root after the self-characterization endpoint returns. The bundle hash-binds the exact ingress packet, manifest hash, payload hash, and the five org-boundary transitions:
 
 ```text
 INGRESS_ACCEPTED
@@ -75,12 +70,11 @@ INGRESS_ACCEPTED
 -> EGRESS_EMITTED
 ```
 
-Master Records reconstruction is required to validate this bundle together with S0, principal transition receipts, and final artifacts. This closes the boundary-history gap between the external SDK packet and the principal evidence chain.
-
+Master Records reconstruction is required to validate this bundle together with S0, principal transition receipts, and final artifacts.
 
 ## Federation ingress/return dispatch — 2026-09-01
 
-The organization kernel and shared-Gateway cycle now dispatch registered internal endpoint adapters rather than rejecting them as non-control services. For the self-characterization lane this makes the operational route:
+The organization kernel and shared-Gateway cycle dispatch registered internal endpoint adapters. For self-characterization the operational route is:
 
 ```text
 federation frame
@@ -95,12 +89,9 @@ federation frame
 
 The response packet carries `response_to_packet_id` and therefore cannot trigger a response loop. A repeated identical request reaches the exactly-once guard and returns the preserved result without rerunning the principal.
 
-
 ## Live boundary progression correction — 2026-09-01
 
-The organization boundary no longer synthesizes the complete self-characterization boundary chain only after the endpoint returns.
-
-For the principal lane it now appends canonical boundary events at the time each boundary transition occurs:
+The organization boundary appends canonical boundary events at the time each boundary transition occurs:
 
 ```text
 INGRESS_ACCEPTED
@@ -115,140 +106,116 @@ The live append-only surface is `ORG_BOUNDARY_RECEIPTS.live.jsonl`. The terminal
 
 Transport consumption and principal completion remain distinct fields. A returned fail-closed/partial endpoint result may be transported and bound without being promoted to successful experiment completion.
 
-
-## Contract-alignment repair — 2026-09-01
-
-The org boundary now records the self-characterization boundary progression append-only while it occurs:
-
-```text
-INGRESS_ACCEPTED
--> DISPATCHED
--> endpoint execution
--> CONSUMED
--> RESULT_BOUND
--> EGRESS_EMITTED
-```
-
-Each boundary receipt carries `observed_at`; post-endpoint receipts carry the exact application disposition so transport completion cannot be confused with principal completion. The terminal bundle is v0.2 and references the live JSONL receipt log.
-
-The browser/public surfaces and Master Records verifier must consume the same canonical experiment ID `STEGVERSE-002-SELF-CHARACTERIZATION-001`. Runtime observation remains pending.
-
-
 ## Version-domain control — 2026-09-01
 
-Canonical version-domain control is now explicit in `docs/SV002_EXPERIMENT_VERSION_DOMAINS.md`.
+Canonical version-domain control is explicit in `docs/SV002_EXPERIMENT_VERSION_DOMAINS.md`.
 
 ```text
 experiment condition: v0.3 FROZEN / OPERATIVE
-implementation: v0.7 PRE-T0 / EVOLVING
+implementation: evolving
 external evaluation: separate revision stream
 expanded protocol document: NON-OPERATIVE unless separately adopted
 ```
 
-Implementation revisions may repair execution, reconstruction, custody routing, observer projection, viewer verification, and fail-closed behavior without changing the experiment-condition version. Any change to the principal-visible objective, system interface, discovery/read surface, search semantics that alter the discovery condition, permitted actions, stopping semantics, subject-visible identity information, or frozen snapshot content requires a new experiment-condition version.
+Implementation revisions may repair execution, reconstruction, custody routing, observer projection, viewer verification, fail-closed behavior, and physical-substrate portability without changing the experiment-condition version. Any change to the principal-visible objective, system interface, discovery/read surface, search semantics that alter the discovery condition, permitted actions, stopping semantics, subject-visible identity information, or frozen snapshot content requires a new experiment-condition version.
 
-This declaration is evaluator/control-plane metadata only and is not principal input, searchable content, or readable experiment material.
+## Canonical Master Records custody binding — 2026-09-01
 
+`resident-runtime/submit_sv002_self_characterization_to_master_records.py` requires the complete canonical v0.3 artifact set, validates experiment/run binding and completed principal state, binds exact artifact names/sizes/SHA-256 values/artifact-set hash/organization-ledger root, publishes the deterministic InTr/federation packet to `master-records.sv002-self-characterization-reconstruction`, writes `MASTER_RECORDS_CUSTODY_HANDOFF.json`, is exactly-once, and grants no authority.
 
-## v0.8 canonical Master Records custody binding — 2026-09-01
+Publication is not reconstruction success; Master Records must consume the packet, establish custody, and produce reconstruction PASS separately.
 
-The canonical StegVerse-002 self-characterization boundary now automatically publishes the completed v0.3 artifact set to Master Records after the organization ledger root is materialized.
+## Resident pre-T0 readiness evaluator — 2026-09-01
 
-Source:
-- `resident-runtime/submit_sv002_self_characterization_to_master_records.py`
+`resident-runtime/evaluate_sv002_pre_t0_readiness.py` remains a resident-only rehearsal/readiness evaluator. It never substitutes for authentic principal execution.
 
-The publisher:
-- requires the complete canonical v0.3 artifact set;
-- validates experiment/run binding and completed principal state;
-- binds the exact artifact names, sizes, SHA-256 values, artifact-set hash, and organization ledger root;
-- publishes a deterministic InTr/federation packet to `master-records.sv002-self-characterization-reconstruction`;
-- writes `MASTER_RECORDS_CUSTODY_HANDOFF.json` into the same state root;
-- is exactly-once for the same run/artifact-set and refuses a write-once collision;
-- never reruns the principal and grants no authority.
-
-The organization boundary now reports `PUBLISHED_TO_MASTER_RECORDS` when that handoff receipt exists. Publication is not reconstruction success; Master Records must consume the packet, establish custody, and produce reconstruction PASS separately.
-
-The StegVerse-002 entity binding now points to the frozen operative contract:
-`experiments/self-characterization-001/EXPERIMENT_CONTRACT.v0.3.json`.
-
-
-## v0.9 resident pre-T0 readiness evaluator — 2026-09-01
-
-The failed GitHub-hosted multi-repository rehearsal has been replaced by a resident-only evaluator that requires the participating repositories to already be locally materialized under StegVerse authority:
-
-- `resident-runtime/evaluate_sv002_pre_t0_readiness.py`
-- `schemas/sv002-pre-t0-readiness.schema.json`
-
-The evaluator never runs the authentic principal. It uses the canonical synthetic v0.3 reconstruction fixture to rehearse the complete custody path, exactly-once publication, Master Records reconstruction, monitoring reference, custody-only public projection, and viewer-verification contract. It also perturbs artifact bytes, RunID, and organization-root binding and requires fail-closed behavior.
-
-Runtime readiness is a separate gate. `READY_FOR_T0` additionally requires:
+Runtime readiness requires:
 - explicit `stegverse.resident-node-eligibility/v1` evidence with declared/eligible/StegVerse-owned-or-federated state;
-- live runtime identity verification of the qualifying non-reference loopback principal model/process;
+- live runtime identity verification of the qualifying non-reference resident-loopback principal model/process;
 - hosted-environment guards clear;
 - empty canonical principal state root.
 
-The readiness receipt always declares `principal_executed=false` and `authority_effect=NONE`. Source or rehearsal PASS cannot substitute for authentic runtime identity/host evidence.
+The readiness receipt declares `principal_executed=false` and `authority_effect=NONE`.
 
+## v0.3 T0 snapshot release state
 
-## v0.3 T0 experiment snapshot release preparation — 2026-09-01
+The frozen experiment condition is bound to `releases/SV002_SELF_CHARACTERIZATION_V0.3_T0_RELEASE_MANIFEST.json`. The ten snapshot tags/releases were reconciled to `EXPERIMENT_SNAPSHOT_RELEASE`; this is evidence identity only and is not a product release, principal-execution claim, `SYSTEM_AI_ACTIVE` claim, custody claim, reconstruction PASS, runtime activation, deployment, admissibility, or Guardian-enforcement claim.
 
-The frozen experiment condition is now bound to a commit-pinned cross-repository snapshot manifest:
+## Native current-iPhone organization execution envelope — issue #23 / 2026-09-06
 
-```text
-releases/SV002_SELF_CHARACTERIZATION_V0.3_T0_RELEASE_MANIFEST.json
-manifest commit: 52d50a682a78cde981eccde895091a1eabbe2383
-proposed common tag: sv002-exp-v0.3-t0-20260901
-release class: EXPERIMENT_SNAPSHOT_RELEASE
-authority_effect: NONE
-activation claim: false
-product release claim: false
-principal execution claim: false
-Master Records reconstruction claim: false
-```
+The final physical-substrate direction reuses the released native resident-loopback implementation on `CURRENT_USER_IPHONE` while preserving this repository as target-organization execution owner.
 
-The manifest pins the authoritative pre-T0 source/evidence surfaces for the frozen v0.3 experiment condition and distinguishes supporting integrations from condition-defining repositories.
-
-Actual Git tag/GitHub prerelease creation remains pending under issue #19 because the currently connected GitHub mutation surface exposes repository file/issue writes but no create-tag/create-release operation. A branch MUST NOT be substituted for a Git tag. Existing repository and TV/TVC release authority remains unchanged.
-
-Post-snapshot projection verification is tracked by issue #20 for:
+Released dependencies already exist outside this repository:
 
 ```text
-StegVerse-Labs/Site
-GCAT-BCAT-Engine/Publisher
-StegVerse-Labs/admissibility-wiki
-StegVerse-002/stegguardian-wiki
+formal model/package/resource authority:
+  StegVerse-002/micro-node-runtime
+
+physical host/backend/offline resource harness:
+  StegVerse-Labs/StegOS
+  host/backend/harness release state through 9801e3adaaa3b231f1876c0cb4a1ff45caf3e215
+
+existing resident request:
+  RESIDENT-EXEC-SV002-ORG-RUNTIME-ACTIVATION-001
+  task SHWP-SV002-ORG-RUNTIME-ACTIVATION-001
 ```
 
-The snapshot tag/release, when created, is evidence identity only. It MUST NOT be interpreted as authentic principal execution, SYSTEM_AI_ACTIVE, Master Records custody/reconstruction completion, runtime activation, deployment, or production release.
-
-## T0 release/tag live reconciliation — 2026-09-02
-
-Independent GitHub API verification now establishes that all ten required snapshot tags/releases exist and each tag ref resolves to its exact manifest-pinned commit.
-
-However, all ten GitHub releases currently report `prerelease=false` while the intended manifest class remains `EXPERIMENT_SNAPSHOT_PRERELEASE`.
-
-Canonical machine-readable state is retained in `releases/SV002_SELF_CHARACTERIZATION_V0.3_T0_RELEASE_MANIFEST.json` as `RELEASES_PRESENT_METADATA_MISMATCH`.
-
-This discrepancy is metadata-only. It does not alter the frozen v0.3 condition, tag identities, source pins, principal execution state, SYSTEM_AI_ACTIVE, Master Records custody/reconstruction, activation, deployment, or product release state.
-
-The connected GitHub mutation surface can read release/tag metadata but cannot update GitHub release metadata. Do not substitute a branch or source-file edit for changing `prerelease` on the actual GitHub releases.
-
-## T0 release-class governance reconciliation — 2026-09-02
-
-Governance decision: OPTION B — accept the ten existing standard GitHub releases and reconcile the canonical snapshot class to `EXPERIMENT_SNAPSHOT_RELEASE`.
-
-Canonical effect:
+Issue #23 adds only a target-owned portable execution-envelope contract:
 
 ```text
-prior declared class: EXPERIMENT_SNAPSHOT_PRERELEASE
-current declared class: EXPERIMENT_SNAPSHOT_RELEASE
-GitHub prerelease metadata required: false
-observed GitHub prerelease metadata: false
-metadata conformance: true
-release execution state: RELEASES_PRESENT_METADATA_CONFORMANT
-authority_effect: NONE
+schemas/sv002-native-org-execution-envelope.schema.json
+resident-runtime/validate_sv002_native_org_execution_envelope.py
+tests/test_sv002_native_org_execution_envelope.py
+README.md
 ```
 
-This is a metadata/classification reconciliation only. The frozen v0.3 experiment condition, exact tags, pinned commits, release identities, source/evidence roles, and all authority boundaries are unchanged.
+Schema:
 
-`EXPERIMENT_SNAPSHOT_RELEASE` is not a product release class. It does not assert principal execution, `SYSTEM_AI_ACTIVE`, custody, reconstruction PASS, runtime activation, deployment, production release, admissibility, or Guardian enforcement.
+```text
+stegverse.sv002-native-org-execution-envelope/v1
+```
+
+The envelope binds:
+- exact admitted ingress packet identity and manifest SHA-256;
+- source/destination organization and service;
+- frozen experiment ID, v0.3 operation, objective, knowledge policy, and effect-resolution semantics;
+- the already-existing resident request/task identity rather than creating another request;
+- `execution_owner_repository=StegVerse-002/.github`;
+- `physical_substrate=CURRENT_USER_IPHONE`;
+- `principal_substrate=RESIDENT_LOOPBACK_NATIVE_IOS`;
+- exact released target model/package identity;
+- the exact SHA-256 of the real materialized frozen-resource bundle once those bytes exist;
+- TV/TVC credential authority;
+- WorkerCoordinator and InTr admission requirements;
+- required Master Records custody/reconstruction;
+- no GitHub runtime authority, hosted runtime, second machine, runtime resource fetch, or authority transfer.
+
+The envelope's authority effect is `NONE_EXECUTION_REQUEST_ONLY`. Its existence, validation, merge, publication, or delivery does not grant execution authority. It is consumable only after the preexisting WorkerCoordinator/InTr admission and physical-device predicates are satisfied.
+
+The real resource-bundle SHA-256 is intentionally a required late binding. Source must not invent it before the exact TT/RTG/GTG/AE + organization-capability bundle bytes are materially assembled and verified.
+
+## README completeness — issue #23
+
+This repository previously had no root `README.md`. Because issue #23 materially changes supported execution-interface semantics, a root README is created in the same change rather than silently waiving the completeness predicate.
+
+## Current runtime truth
+
+```text
+native organization execution-envelope schema/validator: SOURCE IMPLEMENTED / VALIDATION PENDING
+real frozen resource bundle bytes: NOT OBSERVED
+native execution envelope with real bundle SHA: NOT MATERIALIZED
+native envelope delivered to current iPhone: NOT OBSERVED
+physical native model/package/bundle installed: NOT OBSERVED
+live runtime identity: NOT OBSERVED
+resident request consumed: NOT OBSERVED
+principal execution: NOT OBSERVED
+org-boundary terminal result: NOT OBSERVED
+Master Records reconstruction PASS: NOT OBSERVED
+SYSTEM_AI_ACTIVE: false
+```
+
+Source installation, CI, merge, release, heartbeat progression, or static envelope validation does not establish any of those runtime predicates.
+
+## Next action
+
+Validate issue #23 on exact repository head and release the source contract if green. After that, the remaining integration work is to materialize the real frozen resource bundle, bind its exact SHA into an admitted envelope, add the matching StegOS-side envelope consumer without creating a second runtime/host/request, deliver the exact package/model/bundle/envelope to `CURRENT_USER_IPHONE`, and obtain authentic same-execution evidence through organization egress and Master Records reconstruction.
