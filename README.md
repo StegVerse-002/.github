@@ -1,6 +1,6 @@
 # StegVerse-002 Organization Control Plane
 
-This repository owns StegVerse-002 organization-local discovery, ingress, egress, resident dispatch, organization-ledger, and cross-organization execution-boundary semantics. It does **not** own the frozen principal model/runtime contract, which remains in `StegVerse-002/micro-node-runtime`, and it does not make GitHub Actions an execution authority.
+This repository owns StegVerse-002 organization-local discovery, ingress, egress, resident dispatch, organization-ledger, and cross-organization execution-boundary semantics. It does **not** own the frozen principal model/runtime/resource contract, which remains in `StegVerse-002/micro-node-runtime`, and GitHub Actions has no runtime authority.
 
 ## Self-characterization execution ownership
 
@@ -21,19 +21,47 @@ The historical/resident implementation in `resident-runtime/self_characterizatio
 
 ## Native current-iPhone execution envelope
 
-`schemas/sv002-native-org-execution-envelope.schema.json` and `resident-runtime/validate_sv002_native_org_execution_envelope.py` define the organization-owned source contract for carrying an already-admitted frozen-v0.3 self-characterization request into the existing native current-iPhone execution seam.
+The first released envelope revision, `stegverse.sv002-native-org-execution-envelope/v1`, bound the target ingress packet/manifest and all execution/authority constraints but did not cryptographically bind the target organization's canonical `INGRESS_ACCEPTED` receipt. Because no physical native envelope had yet been materialized, v1 is retained as historical/provenance source and MUST NOT be consumed for a new native execution.
 
-The envelope reuses the existing request and task exactly:
+The current consumable revision is:
+
+```text
+stegverse.sv002-native-org-execution-envelope/v1.1
+```
+
+Implementation:
+
+```text
+schemas/sv002-native-org-execution-envelope-v1.1.schema.json
+resident-runtime/validate_sv002_native_org_execution_envelope_v1_1.py
+tests/test_sv002_native_org_execution_envelope_v1_1.py
+```
+
+v1.1 reuses the existing request and task exactly:
 
 ```text
 request: RESIDENT-EXEC-SV002-ORG-RUNTIME-ACTIVATION-001
 task: SHWP-SV002-ORG-RUNTIME-ACTIVATION-001
 ```
 
-It binds the admitted ingress packet/manifest, frozen objective and knowledge policy, target-org execution ownership, `CURRENT_USER_IPHONE`, `RESIDENT_LOOPBACK_NATIVE_IOS`, the released target model/package identity, the exact materialized frozen-resource-bundle SHA-256, TV/TVC credentials, required WorkerCoordinator/InTr admission, and required Master Records reconstruction.
+It binds the frozen ingress packet/manifest plus the exact canonical payload SHA-256 and the target-org `INGRESS_ACCEPTED` receipt identity. The canonical target-boundary receipt is derived from:
 
-It fails closed on request/task substitution, ownership drift, frozen-contract drift, reference-model substitution, hosted or second-machine fallback, runtime network resource fetch, non-TV/TVC credentials, GitHub runtime authority, disabled Master Records requirements, or authority transfer. The envelope has `authority_effect=NONE_EXECUTION_REQUEST_ONLY`; its existence alone grants no execution authority.
+```text
+{
+  packet_id,
+  service_id: stegverse-002.self-characterization,
+  payload_hash,
+  kind: INGRESS_ACCEPTED,
+  previous_receipt_id: null
+}
+```
 
-The real frozen resource-bundle SHA-256 is intentionally not predeclared in source because the real bundle bytes have not yet been materialized. A valid envelope can only be finalized after those exact bytes exist and are hash-bound.
+The envelope must carry the exact deterministic `receipt_id`, `evidence_hash`, service subject, and null predecessor. The v1.1 binder consumes a supplied target-org receipt and verifies that identity; it does not synthesize admission evidence from packet fields alone.
 
-Source/schema/test success does not prove delivery to the physical iPhone, live runtime identity, resident-request consumption, principal execution, an InTr transition, Master Records reconstruction, or `SYSTEM_AI_ACTIVE`.
+The envelope also binds the frozen objective/knowledge policy, target-org execution ownership, `CURRENT_USER_IPHONE`, `RESIDENT_LOOPBACK_NATIVE_IOS`, the released target model/package identity, the exact materialized frozen-resource-bundle SHA-256, TV/TVC credentials, required WorkerCoordinator/InTr admission, and required Master Records reconstruction.
+
+It fails closed on target-ingress-receipt drift, request/task substitution, ownership drift, frozen-contract drift, reference-model substitution, hosted or second-machine fallback, runtime network resource fetch, non-TV/TVC credentials, GitHub runtime authority, disabled Master Records requirements, or authority transfer. The envelope has `authority_effect=NONE_EXECUTION_REQUEST_ONLY`; its existence alone grants no execution authority.
+
+The real frozen resource-bundle SHA-256 is intentionally not predeclared in source because the real bundle bytes have not yet been materialized. A consumable v1.1 envelope can only be finalized after those exact bytes exist and are hash-bound.
+
+Source/schema/test success does not prove WorkerCoordinator checkout, delivery to the physical iPhone, live runtime identity, resident-request consumption, principal execution, downstream organization-boundary transitions, Master Records reconstruction, or `SYSTEM_AI_ACTIVE`.
