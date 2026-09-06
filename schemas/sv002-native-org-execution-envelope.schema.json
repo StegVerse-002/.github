@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stegverse.org/schemas/sv002-native-org-execution-envelope.schema.json",
+  "title": "SV002 Native Organization Execution Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "experiment_id",
+    "frozen_condition_version",
+    "operation",
+    "transport",
+    "ingress",
+    "resident_request",
+    "execution",
+    "principal",
+    "resource_bundle",
+    "governance",
+    "envelope_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "stegverse.sv002-native-org-execution-envelope/v1"},
+    "experiment_id": {"const": "STEGVERSE-002-SELF-CHARACTERIZATION-001"},
+    "frozen_condition_version": {"const": "v0.3"},
+    "operation": {"const": "REQUEST_SELF_CHARACTERIZATION"},
+    "transport": {"const": "InTr"},
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packet_id","origin_organization","origin_service","destination_organization","destination_service","source_organization_id","manifest_id","manifest_sha256","objective","knowledge_policy","authority_transfer","authority_effect_resolution"],
+      "properties": {
+        "packet_id": {"type":"string","minLength":1},
+        "origin_organization": {"type":"string","minLength":1},
+        "origin_service": {"type":"string","minLength":1},
+        "destination_organization": {"const":"StegVerse-002"},
+        "destination_service": {"const":"stegverse-002.self-characterization"},
+        "source_organization_id": {"const":"StegVerse-SDK-Evaluator"},
+        "manifest_id": {"const":"SDK-SV002-FIRST-SELF-CHARACTERIZATION-001"},
+        "manifest_sha256": {"type":"string","pattern":"^[0-9a-f]{64}$"},
+        "objective": {"const":"Determine what constitutes the entity identified as StegVerse-002 and produce a representation sufficient for another system to evaluate and reconstruct your conclusion."},
+        "knowledge_policy": {
+          "const": {
+            "prescribe_self_ontology": false,
+            "prescribe_formalism": false,
+            "prescribe_transition_elements": false,
+            "prescribe_external_followup": false,
+            "prescribe_admissible_existence_connection": false
+          }
+        },
+        "authority_transfer": {"const":false},
+        "authority_effect_resolution": {"const":"DERIVED_FROM_APPLICABLE_TRANSITION_ELEMENTS"}
+      }
+    },
+    "resident_request": {
+      "type":"object",
+      "additionalProperties":false,
+      "required":["request_id","task_id","state","mode"],
+      "properties": {
+        "request_id":{"const":"RESIDENT-EXEC-SV002-ORG-RUNTIME-ACTIVATION-001"},
+        "task_id":{"const":"SHWP-SV002-ORG-RUNTIME-ACTIVATION-001"},
+        "state":{"const":"REQUESTED"},
+        "mode":{"const":"TARGETED_INDEPENDENT_TASK_CONTROL"}
+      }
+    },
+    "execution": {
+      "type":"object",
+      "additionalProperties":false,
+      "required":["execution_owner_repository","physical_substrate","principal_substrate","second_machine_required","hosted_runtime_allowed","runtime_network_resource_fetch_allowed"],
+      "properties": {
+        "execution_owner_repository":{"const":"StegVerse-002/.github"},
+        "physical_substrate":{"const":"CURRENT_USER_IPHONE"},
+        "principal_substrate":{"const":"RESIDENT_LOOPBACK_NATIVE_IOS"},
+        "second_machine_required":{"const":false},
+        "hosted_runtime_allowed":{"const":false},
+        "runtime_network_resource_fetch_allowed":{"const":false}
+      }
+    },
+    "principal": {
+      "type":"object",
+      "additionalProperties":false,
+      "required":["owner_repository","package_schema","model_id","runtime_engine","model_artifact_sha256","reference_model"],
+      "properties": {
+        "owner_repository":{"const":"StegVerse-002/micro-node-runtime"},
+        "package_schema":{"const":"stegverse.sv002-native-principal-package/v0.1"},
+        "model_id":{"const":"stegverse-sv002-native-evidence-principal-v1"},
+        "runtime_engine":{"const":"stegverse-sv002-native-action-policy"},
+        "model_artifact_sha256":{"const":"111151ada104032e9a1c36bd1987ad4de1218d98b4df33879e5efc7c0adfb120"},
+        "reference_model":{"const":false}
+      }
+    },
+    "resource_bundle": {
+      "type":"object",
+      "additionalProperties":false,
+      "required":["owner_repository","schema","bundle_sha256","runtime_network_fetch_allowed"],
+      "properties": {
+        "owner_repository":{"const":"StegVerse-002/micro-node-runtime"},
+        "schema":{"const":"stegverse.sv002-native-resource-bundle/v1"},
+        "bundle_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+        "runtime_network_fetch_allowed":{"const":false}
+      }
+    },
+    "governance": {
+      "type":"object",
+      "additionalProperties":false,
+      "required":["credential_authority","github_runtime_authority","workercoordinator_required","intr_admission_required","master_records_required","authority_transfer","authority_effect"],
+      "properties": {
+        "credential_authority":{"const":"TV/TVC"},
+        "github_runtime_authority":{"const":"NONE"},
+        "workercoordinator_required":{"const":true},
+        "intr_admission_required":{"const":true},
+        "master_records_required":{"const":true},
+        "authority_transfer":{"const":false},
+        "authority_effect":{"const":"NONE_EXECUTION_REQUEST_ONLY"}
+      }
+    },
+    "envelope_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}
+  }
+}
