@@ -141,93 +141,113 @@ The readiness receipt declares `principal_executed=false` and `authority_effect=
 
 The frozen experiment condition is bound to `releases/SV002_SELF_CHARACTERIZATION_V0.3_T0_RELEASE_MANIFEST.json`. The ten snapshot tags/releases were reconciled to `EXPERIMENT_SNAPSHOT_RELEASE`; this is evidence identity only and is not a product release, principal-execution claim, `SYSTEM_AI_ACTIVE` claim, custody claim, reconstruction PASS, runtime activation, deployment, admissibility, or Guardian-enforcement claim.
 
-## Native current-iPhone organization execution envelope — released 2026-09-06
+## Native current-iPhone organization execution envelope v1 — released source / historical only
 
-Issue #23 / PR #24 released the target-owned portable organization-execution envelope while preserving `StegVerse-002/.github` as the target principal execution owner.
-
-Release identity:
+Issue #23 / PR #24 released `stegverse.sv002-native-org-execution-envelope/v1`, preserving `StegVerse-002/.github` as target principal execution owner.
 
 ```text
 validated PR head: 44472f699fb820748336731bfd161a31f6f97276
 merge: 94a14a67c1b7044aaac4381ea5be0762e505c617
+release reconciliation: 1125ac9e75ab725df60ce8559dc6683e5f2ec6ac
 Org Boundary Execution validation: 34014887434 SUCCESS
 ```
 
-The exact-head validation ran the existing organization boundary, hierarchical-ledger, Master Records handoff and pre-T0 readiness regressions plus all six native-envelope tests. No existing boundary regression failed.
+v1 remains retained for provenance. It binds the ingress packet/manifest, frozen experiment semantics, existing resident request/task, current-iPhone/native principal substrate, exact target model/package/resource identities, TV/TVC, WorkerCoordinator/InTr requirements, Master Records requirements, and no authority transfer. However, it does not cryptographically bind the target organization's live `INGRESS_ACCEPTED` receipt. No physical v1 envelope was materialized. v1 MUST NOT be selected for a new native execution.
 
-Released dependencies outside this repository:
+## Native current-iPhone organization execution envelope v1.1 — issue #26
 
-```text
-formal model/package/resource authority:
-  StegVerse-002/micro-node-runtime
-  resource-bundle source release ff106687106ad74d5fa58795ecbfbc65c6961f3f
+Issue #26 advances only the portable envelope implementation version; frozen experiment condition v0.3 is unchanged.
 
-physical host/backend/offline resource harness:
-  StegVerse-Labs/StegOS
-  source-native-chain release state 9801e3adaaa3b231f1876c0cb4a1ff45caf3e215
-
-existing resident request:
-  RESIDENT-EXEC-SV002-ORG-RUNTIME-ACTIVATION-001
-  task SHWP-SV002-ORG-RUNTIME-ACTIVATION-001
-```
-
-Released issue #23 surfaces:
+Current consumable schema:
 
 ```text
-schemas/sv002-native-org-execution-envelope.schema.json
-resident-runtime/validate_sv002_native_org_execution_envelope.py
-tests/test_sv002_native_org_execution_envelope.py
-README.md
-.github/workflows/org-boundary-execution.yml
+stegverse.sv002-native-org-execution-envelope/v1.1
 ```
 
-Schema:
+Implementation surfaces:
 
 ```text
-stegverse.sv002-native-org-execution-envelope/v1
+schemas/sv002-native-org-execution-envelope-v1.1.schema.json
+resident-runtime/validate_sv002_native_org_execution_envelope_v1_1.py
+tests/test_sv002_native_org_execution_envelope_v1_1.py
 ```
 
-The envelope binds:
-- exact admitted ingress packet identity and manifest SHA-256;
-- source/destination organization and service;
-- frozen experiment ID, v0.3 operation, objective, knowledge policy, and effect-resolution semantics;
-- the already-existing resident request/task identity rather than creating another request;
-- `execution_owner_repository=StegVerse-002/.github`;
-- `physical_substrate=CURRENT_USER_IPHONE`;
-- `principal_substrate=RESIDENT_LOOPBACK_NATIVE_IOS`;
-- exact released target model/package identity;
-- the exact SHA-256 of the real materialized frozen-resource bundle once those bytes exist;
-- TV/TVC credential authority;
-- WorkerCoordinator and InTr admission requirements;
-- required Master Records custody/reconstruction;
-- no GitHub runtime authority, hosted runtime, second machine, runtime resource fetch, or authority transfer.
+v1.1 adds exact target-org ingress-admission binding before any physical consumer may accept the envelope. `org-boundary/runtime/process_boundary.py` emits `INGRESS_ACCEPTED` before dispatch using this canonical receipt subject:
 
-The envelope's authority effect is `NONE_EXECUTION_REQUEST_ONLY`. Its existence, validation, merge, publication, or delivery does not grant execution authority. It is consumable only after the preexisting WorkerCoordinator/InTr admission and physical-device predicates are satisfied.
+```text
+{
+  packet_id,
+  service_id: stegverse-002.self-characterization,
+  payload_hash,
+  kind: INGRESS_ACCEPTED,
+  previous_receipt_id: null
+}
+```
 
-The real resource-bundle SHA-256 remains an intentionally required late binding. Source must not invent it before the exact TT/RTG/GTG/AE + organization-capability bundle bytes are materially assembled and verified.
+The target boundary computes:
 
-## README completeness — issue #23
+```text
+evidence_hash = sha256(canonical(receipt subject))
+receipt_id = ingress_accepted- + first 24 hex characters of evidence_hash
+```
 
-This repository previously had no root `README.md`. Issue #23 materially changed supported execution-interface semantics, so a root README was created in the same functional change. The release-state reconciliation is documentation-only and requires no additional README mutation.
+v1.1 therefore requires:
+- `ingress.payload_sha256`;
+- `ingress_admission.kind=INGRESS_ACCEPTED`;
+- the exact deterministic `receipt_id`;
+- the exact deterministic `evidence_hash`;
+- `subject=stegverse-002.self-characterization`;
+- `previous_receipt_id=null`.
+
+The v1.1 binder accepts a supplied live target-org ingress receipt and verifies these values, including a non-empty `observed_at`. It does not mint or infer an admission receipt merely from ingress fields. Any packet/service/payload-hash or receipt identity drift fails closed.
+
+All v1 execution boundaries remain unchanged:
+
+```text
+resident request: RESIDENT-EXEC-SV002-ORG-RUNTIME-ACTIVATION-001
+task: SHWP-SV002-ORG-RUNTIME-ACTIVATION-001
+execution owner: StegVerse-002/.github
+physical substrate: CURRENT_USER_IPHONE
+principal substrate: RESIDENT_LOOPBACK_NATIVE_IOS
+principal owner: StegVerse-002/micro-node-runtime
+credential authority: TV/TVC
+GitHub runtime authority: NONE
+second machine required: false
+hosted runtime allowed: false
+runtime network resource fetch allowed: false
+WorkerCoordinator required: true
+InTr admission required: true
+Master Records required: true
+authority transfer: false
+authority effect: NONE_EXECUTION_REQUEST_ONLY
+```
+
+The exact materialized resource-bundle SHA-256 remains a required late binding and MUST NOT be invented before the frozen TT/RTG/GTG/AE + organization-capability bundle bytes actually exist.
+
+## README completeness — issue #26
+
+Material execution-admission semantics changed. README is updated in the same change to mark v1 historical-only and v1.1 current-consumable. The canonical Org Boundary Execution workflow is also extended to run the v1.1 tests while retaining all pre-existing boundary/reconstruction tests.
 
 ## Current runtime truth
 
 ```text
-native organization execution-envelope schema/validator: COMPLETE / RELEASED SOURCE
+native envelope v1 source: COMPLETE / RELEASED / HISTORICAL_ONLY
+native envelope v1.1 ingress-bound source: IMPLEMENTED / VALIDATION PENDING
 real frozen resource bundle bytes: NOT OBSERVED
-native execution envelope with real bundle SHA: NOT MATERIALIZED
+native v1.1 execution envelope with real bundle SHA: NOT MATERIALIZED
 native envelope delivered to current iPhone: NOT OBSERVED
 physical native model/package/bundle installed: NOT OBSERVED
+WorkerCoordinator checkout for this task: NOT OBSERVED IN THIS SESSION
 live runtime identity: NOT OBSERVED
 resident request consumed: NOT OBSERVED
 principal execution: NOT OBSERVED
-org-boundary terminal result: NOT OBSERVED
+org-boundary downstream terminal result: NOT OBSERVED
 Master Records reconstruction PASS: NOT OBSERVED
 SYSTEM_AI_ACTIVE: false
 ```
 
-Source installation, CI, merge, release, heartbeat progression, or static envelope validation does not establish any of those runtime predicates.
+Source installation, CI, merge, release, heartbeat progression, or static envelope validation does not establish any runtime predicate.
 
 ## Next action
 
-Add the matching StegOS-side consumer for the released target-owned envelope without creating a second runtime, listener, request, principal identity, scheduler, WorkerCoordinator, or credential path. Separately resolve real frozen-resource bundle materialization, bind its exact SHA into an admitted envelope, deliver exact package/model/bundle/envelope to `CURRENT_USER_IPHONE`, and obtain authentic same-execution evidence through organization egress and Master Records reconstruction.
+Validate and release issue #26. Only then implement the matching StegOS consumer against v1.1, requiring the real resource-bundle SHA and existing WorkerCoordinator authority evidence without creating a second runtime, listener, request, principal identity, scheduler, WorkerCoordinator, credential path, or synthetic target-org admission.
