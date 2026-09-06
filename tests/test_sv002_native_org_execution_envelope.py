@@ -1,10 +1,15 @@
 from copy import deepcopy
+import importlib.util
+from pathlib import Path
 
 import pytest
 
-from resident_runtime_import import load_module
-
-mod = load_module("resident-runtime/validate_sv002_native_org_execution_envelope.py", "sv002_native_org_execution_envelope")
+ROOT = Path(__file__).resolve().parents[1]
+MODULE_PATH = ROOT / "resident-runtime" / "validate_sv002_native_org_execution_envelope.py"
+spec = importlib.util.spec_from_file_location("sv002_native_org_execution_envelope", MODULE_PATH)
+assert spec and spec.loader
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
 
 
 def ingress():
