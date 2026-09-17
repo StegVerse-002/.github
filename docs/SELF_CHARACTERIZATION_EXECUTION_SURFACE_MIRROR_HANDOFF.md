@@ -175,3 +175,22 @@ The current Goal Task for the original frozen v0.3 rerun is `STEGVERSE-002-EXPER
 `SHWP-SV002-FROZEN-CORPUS-MATERIALIZATION-001` remains adjacent historical/decomposed work and is explicitly not a prerequisite for this rerun. No stricter corpus-completeness gate, Healer dependency, scheduler, runtime, host, alternate authority path, or second user-operated device is added.
 
 Current first source seam being repaired is callable ownership: the discovery surface must name `STEGVERSE-002-EXPERIMENT-RERUN-001`, not retired `SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001`. Authentic runtime predicates remain unclaimed until the existing invocation path emits retained evidence.
+
+
+## Session closeout — 2026-09-17
+
+Session intentionally closed by the user after canonical rerun coordination repair.
+
+Authoritative closeout state:
+
+- Goal Task: `STEGVERSE-002-EXPERIMENT-RERUN-001`
+- COSV: `50000000107000`
+- canonical coordination state: `ACTIVE`
+- StegVerse-Labs/.github registration/callable-owner repair merged: `1df18504c1cb3972036bc5b669cde0a01acea6a3` (PR #2071)
+- StegVerse-002/.github handoff/README reconciliation merged: `83cdcca2961e6002f90dbbd93e73af6ed0d63fda` (PR #28)
+- focused Ephemeral Execution Surface Discovery validation: `PASS`
+- `SHWP-SV002-FROZEN-CORPUS-MATERIALIZATION-001`: adjacent/non-prerequisite for this rerun
+- authentic `REQUEST_BOUND` and all downstream rerun runtime predicates: not yet observed; no execution completion claimed
+- manual prerequisite: none
+
+The earlier sections naming `SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001` as the current successor/callable owner are historical state and are superseded by this reconciliation. The next session must start from the merged canonical rerun identity above, trace the existing operation-specific StegVerseNode request builder/outbox consumer, and bind exactly one `REQUEST_SELF_CHARACTERIZATION` invocation through the existing Node -> Interlock/InTr -> bounded EVENT_EPHEMERAL path. Do not introduce a new runtime, scheduler, host, Healer dependency, alternate authority path, corpus prerequisite, or second user-operated device.
