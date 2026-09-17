@@ -89,3 +89,8 @@ registered StegVerseNode
 Zero connected devices is not a runtime blocker for this path. No standing runtime, external host, second request, second scheduler, second WorkerCoordinator, alternate credential path, or second user-operated device may be introduced merely to make the rerun executable.
 
 Missing required transition evidence means the action is not proven complete. Source state, CI, discovery metadata, scheduling metadata, or partial receipts cannot substitute for the complete transition chain.
+
+
+## Current original rerun task
+
+The current canonical rerun identity is `STEGVERSE-002-EXPERIMENT-RERUN-001` with COSV `50000000107000`. It uses the existing registered StegVerseNode -> Interlock/InTr -> bounded EVENT_EPHEMERAL execution path and does not depend on `SHWP-SV002-FROZEN-CORPUS-MATERIALIZATION-001` as a prerequisite.
