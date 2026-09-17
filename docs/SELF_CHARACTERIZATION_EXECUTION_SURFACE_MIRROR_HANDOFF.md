@@ -9,8 +9,6 @@ Repository: StegVerse-002/.github
 
 This handoff governs the organization-local StegVerse-002 self-characterization execution surface. The frozen experiment contract remains owned by `StegVerse-002/micro-node-runtime` and remains `v0.3 FROZEN / OPERATIVE`.
 
-Current execution successor:
-
 ```text
 Goal Task ID: SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001
 Parent Goal Task ID: SHWP-SV002-ORG-RUNTIME-ACTIVATION-001
@@ -22,15 +20,7 @@ Tracking issue: StegVerse-Labs/.github#2060
 Callable-ownership repair: StegVerse-Labs/.github#2063 / a040d37c3809f3d78b6478b1f2e4ff9a3e59e500
 ```
 
-The exact task shard is present on canonical `main`. Aggregate registry refresh is non-authorizing reconciliation and does not gate this successor.
-
-## Callable-ownership correction — 2026-09-17
-
-The first ephemeral discovery implementation incorrectly assigned the same callable task to both `StegVerseNode` and `StegBrowser`. That was a routing defect because `RT-STEGBROWSER-RUNTIME-CONSUMPTION-001` is explicitly scoped to the StegBrowser manifest-defined transport operation and its existing runner/ingress implementation binds StegBrowser-specific task, COSV, manifest, and packet semantics.
-
-PR `StegVerse-Labs/.github#2063` corrected the split and merged as `a040d37c3809f3d78b6478b1f2e4ff9a3e59e500` after exact-head validation passed for ephemeral discovery, organization control plane, deterministic repository suite, and heartbeat validation.
-
-Canonical callable ownership is now:
+## Corrected callable ownership
 
 ```text
 StegVerseNode
@@ -44,23 +34,13 @@ StegVerseNode
   operation: REQUEST_SELF_CHARACTERIZATION
 
 StegBrowser
-  class: ephemeral
-  availability: AVAILABLE_TO_INVOKE
-  instance_state: NOT_MATERIALIZED
-  runtime_class: EVENT_EPHEMERAL
-  materialization: ON_INVOCATION
   callable_task: RT-STEGBROWSER-RUNTIME-CONSUMPTION-001
   operation: STEGBROWSER_MANIFEST_DEFINED_INTR_INGRESS
-
-connected_count: 0
-zero_connected_devices_is_runtime_blocker: false
 ```
 
-The StegBrowser reusable task remains valid provenance for the already-validated registered-Node -> Interlock -> Universal InTr materialization -> bounded lease -> event-ephemeral mechanics. It is **not** the callable owner for the SV002 self-characterization operation.
+The StegBrowser reusable task remains valid mechanics provenance only. It is not the SV002 callable owner.
 
 ## Ownership and authority
-
-Execution ownership remains:
 
 ```text
 registered StegVerseNode
@@ -73,26 +53,16 @@ registered StegVerseNode
 -> Master Records custody/reconstruction
 ```
 
-Authority invariants:
-
 - execution owner = `StegVerse-002/.github`;
 - principal owner = `StegVerse-002/micro-node-runtime`;
-- Task Registry = intent/coordination only;
 - WorkerCoordinator = claim/fence authority;
 - Interlock/InTr = governed transition authority;
 - TV/TVC = credential/provider authority;
 - Master Records = observed-reality custody/reconstruction authority;
 - HeartBeat = timing/freshness/liveness/observability only;
 - GitHub/CI/source runtime authority = `NONE`;
-- model output does not self-grant authority;
 - second user-operated device required = `false`;
 - standing runtime required = `false`.
-
-## Universal action-transition evidence invariant
-
-Every StegVerse action is canonically complete only when every required governed state transition is authentically emitted, retained, same-execution correlated, and reconstructable through canonical Master Records custody.
-
-This is ecosystem-wide. Missing transition evidence means the action is not proven complete; source, CI, scheduling, discovery metadata, runtime declarations, or partial receipts cannot substitute for the complete transition chain.
 
 ## Frozen v0.3 semantics
 
@@ -102,11 +72,9 @@ implementation: evolving
 external evaluation: separate revision stream
 ```
 
-Implementation may repair invocation, transport, custody, reconstruction, physical-substrate portability, and evidence retention without changing v0.3. It may not change the principal-visible objective, frozen resources, subject-visible discovery condition, permitted actions, stopping semantics, or frozen snapshot content.
+Implementation may repair invocation, transport, custody, reconstruction, physical-substrate portability, and evidence retention without changing v0.3.
 
 ## Required invocation path
-
-The corrected operation-specific path is:
 
 ```text
 REGISTERED_STEGVERSE_NODE
@@ -123,11 +91,7 @@ REGISTERED_STEGVERSE_NODE
 -> MASTER_RECORDS_CUSTODY_RECONSTRUCTION
 ```
 
-No attached or continuously connected device is required. `NOT_MATERIALIZED` is the correct resting state before invocation.
-
 ## Required transition evidence
-
-The same invocation must retain, at minimum, authentic evidence for:
 
 ```text
 REQUEST_BOUND
@@ -147,57 +111,57 @@ MASTER_RECORDS_RECONSTRUCTION_PASS
 ALL_REQUIRED_ACTION_TRANSITIONS_RECONSTRUCTABLE
 ```
 
-The actual internal principal-transition set must come from the frozen v0.3 contract and authentic runtime receipts. This handoff must not invent transition occurrence.
+Every required transition must be authentically emitted, retained, same-execution correlated, and reconstructable. Missing evidence means the action is not proven complete.
 
-## Organization-boundary receipt custody
+## 2026-09-17 successor consumption attempt
 
-The organization boundary continues to preserve the canonical live transition lineage:
+The canonical registry shard and both handoffs were reverified. The first unretained transition is:
 
 ```text
-INGRESS_ACCEPTED
-DISPATCHED
-<principal executes>
-CONSUMED
-RESULT_BOUND
-EGRESS_EMITTED
+REQUEST_BOUND: NOT RETAINED / NOT AUTHENTICALLY OBSERVED
 ```
 
-`ORG_BOUNDARY_RECEIPTS.live.jsonl` is the append-only live surface. `ORG_BOUNDARY_RECEIPTS.json` is the terminal bundle. Exactly-once replay reuses the frozen bundle instead of minting a second history.
+The successor currently has discovery/catalog binding but no operation-specific invocation request retained under Goal `SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001` / COSV `50000000107000`.
 
-Transport consumption and principal completion remain distinct. A fail-closed or partial endpoint result may be transported without being promoted to successful experiment completion.
+Observed reasons:
 
-## Master Records rule
+- no successor-specific nonce-bound request packet or same-invocation Node outbox entry was found under the successor Goal/COSV;
+- the current same-device Canonical Work launcher is still StegBrowser-specific and hard-codes the StegBrowser goal/COSV/nonce/manifest/destination;
+- the existing StegVerse-Labs self-characterization consumer is hard-coded to older task `SHWP-SV002-SELF-CHARACTERIZATION-001`;
+- its resident request is explicitly `SUPERSEDED_CROSS_ORG_EXECUTION` and historical/reference only;
+- no standing connected device was observed, which is expected and is not a runtime blocker for on-invocation EVENT_EPHEMERAL materialization.
 
-StegVerse-002 is the event source and receipt issuer. Master Records is the canonical custody/reconstruction authority. `resident-runtime/submit_sv002_self_characterization_to_master_records.py` remains the canonical artifact-custody path for a completed v0.3 artifact set. Publication alone is not reconstruction success; Master Records must establish custody and return reconstruction PASS.
+Execution stops at `REQUEST_BOUND`; no later transition is inferred or claimed.
 
 ## Current runtime truth
 
 ```text
 frozen v0.3 contract: OPERATIVE / UNCHANGED
-parent SHWP-SV002-ORG-RUNTIME-ACTIVATION-001: PROMPT LIMIT REACHED
 successor SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001: ACTIVE
-successor canonical registry shard: PRESENT ON MAIN
 successor COSV: 50000000107000
 callable ownership defect: REPAIRED / MERGED
-repair merge: a040d37c3809f3d78b6478b1f2e4ff9a3e59e500
 StegVerseNode callable task: SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001
 StegVerseNode execution owner: StegVerse-002/.github
 StegVerseNode operation: REQUEST_SELF_CHARACTERIZATION
-StegBrowser callable task: RT-STEGBROWSER-RUNTIME-CONSUMPTION-001
 zero connected devices: NOT A BLOCKER
 standing runtime required: false
 second user-operated device required: false
-successor invocation consumed: NOT YET OBSERVED
-T0 for successor rerun: NOT YET OBSERVED
-principal execution for successor rerun: NOT YET OBSERVED
-complete same-execution transition evidence: NOT YET OBSERVED
-Master Records reconstruction PASS for successor rerun: NOT YET OBSERVED
+REQUEST_BOUND: NOT RETAINED
+STEGVERSE_NODE_BOUND_TO_INVOCATION: NOT CLAIMED
+INTR_MATERIALIZATION_ADMITTED: NOT CLAIMED
+INVOCATION_SCOPED_LEASE_ESTABLISHED: NOT CLAIMED
+EVENT_EPHEMERAL_RUNTIME_MATERIALIZED: NOT CLAIMED
+T0_CAPTURED: NOT CLAIMED
+CURRENT_WORKERCOORDINATOR_CLAIM_FENCE_OBSERVED: NOT CLAIMED
+PRINCIPAL_EXECUTION_TRANSITIONS_RETAINED: NOT CLAIMED
+EGRESS_EMITTED: NOT CLAIMED
+MASTER_RECORDS_RECONSTRUCTION_PASS: NOT CLAIMED
 SYSTEM_AI_ACTIVE from this rerun: false
 ```
 
 ## Next action
 
-Consume `SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001` through the corrected `StegVerseNode -> Interlock -> InTr -> bounded EVENT_EPHEMERAL -> StegVerse-002/.github self-characterization` path. Capture each required transition as it occurs and preserve the exact same-invocation lineage through Master Records. Do not route this operation through the StegBrowser manifest task, and do not add a host, bridge, listener, scheduler, alternate dispatcher, second request, second device, or synthetic receipt.
+Repair only the successor request-binding/invocation-consumption seam. Reuse the existing registered Node -> Interlock -> Universal InTr -> bounded EVENT_EPHEMERAL mechanics, but bind an operation-specific request for Goal `SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001`, COSV `50000000107000`, owner `StegVerse-002/.github`, operation `REQUEST_SELF_CHARACTERIZATION`, destination `stegverse-002.self-characterization`, frozen condition `v0.3`. Retain authentic `REQUEST_BOUND` evidence before attempting the next transition. Do not reuse the StegBrowser goal/COSV/nonce/manifest packet, reactivate the superseded cross-org request, add a host/listener/scheduler/second request/second device, or synthesize downstream evidence.
 
 ## Manual work
 
