@@ -166,3 +166,12 @@ Repair only the successor request-binding/invocation-consumption seam. Reuse the
 ## Manual work
 
 None.
+
+
+## 2026-09-17 canonical rerun reconciliation
+
+The current Goal Task for the original frozen v0.3 rerun is `STEGVERSE-002-EXPERIMENT-RERUN-001` under COSV `50000000107000`, registered through StegVerse-Labs/.github issue #2070 / PR #2071. This task resumes only the original `STEGVERSE-002-SELF-CHARACTERIZATION-001` execution objective through the already-established registered StegVerseNode -> Interlock -> Universal InTr -> bounded invocation lease -> EVENT_EPHEMERAL -> organization-local self-characterization surface -> v0.3 principal -> governed egress/return -> Master Records custody/reconstruction -> origin-return sequence.
+
+`SHWP-SV002-FROZEN-CORPUS-MATERIALIZATION-001` remains adjacent historical/decomposed work and is explicitly not a prerequisite for this rerun. No stricter corpus-completeness gate, Healer dependency, scheduler, runtime, host, alternate authority path, or second user-operated device is added.
+
+Current first source seam being repaired is callable ownership: the discovery surface must name `STEGVERSE-002-EXPERIMENT-RERUN-001`, not retired `SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001`. Authentic runtime predicates remain unclaimed until the existing invocation path emits retained evidence.
