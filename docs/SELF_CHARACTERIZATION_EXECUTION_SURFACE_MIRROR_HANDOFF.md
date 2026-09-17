@@ -16,10 +16,12 @@ Goal Task ID: SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001
 Parent Goal Task ID: SHWP-SV002-ORG-RUNTIME-ACTIVATION-001
 Parent disposition: PROMPT LIMIT REACHED / DO NOT EXTEND
 COSV: 50000000107000
-Registry record: StegVerse-Labs/.github/data/canonical-task-records/SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001.json
+Canonical registry shard: StegVerse-Labs/.github/data/canonical-task-records/SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001.json
 Registry handoff: StegVerse-Labs/.github/docs/SV002_ACTION_TRANSITION_EVIDENCE_MIRROR_HANDOFF.md
 Tracking issue: StegVerse-Labs/.github#2060
 ```
+
+The exact task shard is present on canonical `main`. StegVerse-Labs/.github already documents sharded Canonical Work ingress for exact registered task shards when a preserved resident monolithic registry has not yet refreshed. Aggregate registry refresh is non-authorizing reconciliation and does not gate this successor.
 
 The successor is separable because the parent established execution-surface discovery while the remaining defect is direct consumption of that callable event-ephemeral invocation plus complete transition-evidence retention.
 
@@ -175,6 +177,7 @@ No historical envelope, release, source test, or readiness evaluator may be prom
 frozen v0.3 contract: OPERATIVE / UNCHANGED
 parent SHWP-SV002-ORG-RUNTIME-ACTIVATION-001: PROMPT LIMIT REACHED
 successor SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001: ACTIVE
+successor canonical registry shard: PRESENT ON MAIN
 successor COSV: 50000000107000
 ephemeral StegVerseNode discovery: AVAILABLE_TO_INVOKE
 ephemeral StegBrowser discovery: AVAILABLE_TO_INVOKE
@@ -191,7 +194,7 @@ SYSTEM_AI_ACTIVE from this rerun: false
 
 ## Next action
 
-Complete aggregate Task Registry registration for `SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001`, then consume the existing callable `RT-STEGBROWSER-RUNTIME-CONSUMPTION-001` event-ephemeral path for the frozen v0.3 request. Capture each required transition at the time it occurs and preserve the exact same-invocation lineage through Master Records. Do not add a host, bridge, listener, scheduler, alternate dispatcher, second request, second device, or synthetic receipt.
+Consume the existing callable `RT-STEGBROWSER-RUNTIME-CONSUMPTION-001` event-ephemeral path for the frozen v0.3 request now that the exact successor registry shard exists. Capture each required transition at the time it occurs and preserve the exact same-invocation lineage through Master Records. Aggregate registry refresh may proceed independently as non-authorizing reconciliation. Do not add a host, bridge, listener, scheduler, alternate dispatcher, second request, second device, or synthetic receipt.
 
 ## Manual work
 
