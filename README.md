@@ -65,3 +65,27 @@ It fails closed on target-ingress-receipt drift, request/task substitution, owne
 The real frozen resource-bundle SHA-256 is intentionally not predeclared in source because the real bundle bytes have not yet been materialized. A consumable v1.1 envelope can only be finalized after those exact bytes exist and are hash-bound.
 
 Source/schema/test success does not prove WorkerCoordinator checkout, delivery to the physical iPhone, live runtime identity, resident-request consumption, principal execution, downstream organization-boundary transitions, Master Records reconstruction, or `SYSTEM_AI_ACTIVE`.
+
+## Universal action-transition evidence invariant
+
+Every StegVerse action is canonically complete only when every required governed state transition is authentically emitted, retained, same-execution correlated, and reconstructable through canonical Master Records custody. This is an ecosystem-wide invariant, not a special condition of the StegVerse-002 experiment.
+
+For the frozen v0.3 rerun, the current successor coordination task is `SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001` under COSV `50000000107000`. It reuses the already-validated event-ephemeral path:
+
+```text
+registered StegVerseNode
+-> Interlock
+-> Universal InTr materialization
+-> bounded invocation lease
+-> EVENT_EPHEMERAL runtime
+-> execution-time runtime identity
+-> WorkerCoordinator claim/fence
+-> authentic governed ingress
+-> frozen v0.3 execution
+-> governed egress
+-> Master Records custody/reconstruction
+```
+
+Zero connected devices is not a runtime blocker for this path. No standing runtime, external host, second request, second scheduler, second WorkerCoordinator, alternate credential path, or second user-operated device may be introduced merely to make the rerun executable.
+
+Missing required transition evidence means the action is not proven complete. Source state, CI, discovery metadata, scheduling metadata, or partial receipts cannot substitute for the complete transition chain.
