@@ -172,3 +172,17 @@ resident-runtime/run_sv002_self_characterization_roundtrip.py
 Neither referenced file exists on current main. Do not recreate, restore, or wrap those files merely to obtain a runnable path. Without newly observed experiment-local evidence that this exact retired one-shot mechanism is again canonical, doing so fingerprints as `DUPLICATE_OF: SV002-ATTEMPT-007`.
 
 The current experiment-owned endpoint is instead represented by the ACTIVE `stegverse-002.self-characterization` service and the existing organization-kernel InTr federation publication/consumption semantics. This statement identifies the currently installed source edge; it does not claim live submission, `REQUEST_BOUND`, runtime materialization, or principal execution.
+
+
+## Admitted new approach — callable-to-existing-publisher binding
+
+This is not a new attempt family and does not supersede any DO_NOT_REPEAT entry.
+
+```text
+NEW_APPROACH: true
+DIFFERS_FROM: SV002-ATTEMPT-007 / 008 / 009 / 013
+NEW_DISTINGUISHING_EVIDENCE: current experiment source already contains the ACTIVE self-characterization endpoint plus publish/consume federation primitives, while the current Goal had no machine binding to those primitives
+WHY_OLD_DISPOSITION_NO_LONGER_CONTROLS: resident-runtime/invoke_sv002_experiment_rerun.py delegates only to the existing publisher, creates no independent transport/runtime/bridge, and enforces one immutable request/frame
+```
+
+If future work proposes another publisher, wrapper, listener, device channel, scheduler, Site path, or separate request instead of consuming this binding, classify it against the existing DO_NOT_REPEAT references rather than adding another path.

@@ -110,3 +110,10 @@ For `STEGVERSE-002-EXPERIMENT-RERUN-001`, the experiment-owned current ingress i
 The legacy `resident_executor.py` references to `resident-runtime/control/sv002-sdk-query.request.json` and `resident-runtime/run_sv002_self_characterization_roundtrip.py` are stale on current main because both referenced files are absent. They must not be restored as a substitute invocation path without genuinely new experiment-local evidence. The mandatory duplicate-attempt rules remain in `docs/STEGVERSE_002_EXPERIMENT_ATTEMPT_REFERENCE.md`.
 
 Authentic `REQUEST_BOUND`, principal execution, and same-execution reconstruction remain unobserved until the frozen request is consumed through the existing live federation edge.
+
+
+## Rerun callable publisher binding
+
+`resident-runtime/invoke_sv002_experiment_rerun.py` is the machine binding for `STEGVERSE-002-EXPERIMENT-RERUN-001`. It does not implement a new transport or runtime. It binds the frozen `REQUEST_SELF_CHARACTERIZATION` request to the existing organization-kernel carrier/federation publisher and fails closed outside an already-configured shared gateway or same-host federation mesh.
+
+The binding is exactly-once: one deterministic packet is bound to one retained carrier frame, and retries reuse that same frame. GitHub/CI execution is prohibited and cannot establish `REQUEST_BOUND`.

@@ -245,3 +245,40 @@ principal execution: NOT OBSERVED
 ```
 
 No new runtime, listener, bridge, request daemon, device prerequisite, Site prerequisite, workflow runtime, or external-repository precedent was introduced. The next valid action is not another source reconstruction: it is consumption of exactly one frozen `REQUEST_SELF_CHARACTERIZATION` invocation through the already-existing live federation publication edge when that existing callable edge is exposed to the invocation context. A repository write or CI invocation must not be used as a substitute.
+
+
+## 2026-09-17 callable publisher binding repair
+
+The permitted NEW_APPROACH test is satisfied for exactly one narrow repair:
+
+```text
+NEW_APPROACH: true
+DIFFERS_FROM: SV002-ATTEMPT-007 / SV002-ATTEMPT-008 / SV002-ATTEMPT-009 / SV002-ATTEMPT-013
+NEW_DISTINGUISHING_EVIDENCE: the experiment-owned ACTIVE self-characterization endpoint and org-kernel publisher already exist, but no machine callable binding connected STEGVERSE-002-EXPERIMENT-RERUN-001 to that existing publisher
+WHY_OLD_DISPOSITION_NO_LONGER_CONTROLS: this repair adds no bridge, transport, runtime, listener, scheduler, device channel, Site dependency, or second request; it binds the task directly to existing org-kernel/shared-federation publication
+```
+
+Implemented source binding:
+
+- `resident-runtime/invoke_sv002_experiment_rerun.py`
+- `tests/test_sv002_experiment_rerun_callable_binding.py`
+- `resident-runtime/activation-manifest.json` now exposes task `STEGVERSE-002-EXPERIMENT-RERUN-001`, operation `REQUEST_SELF_CHARACTERIZATION`, invocation count `1`, and the binding path.
+
+The binding constructs the frozen request only from the existing organization-local self-characterization binding, creates one deterministic packet identity, retains the exact carrier frame as `RERUN_REQUEST_BOUND.json` before submission, and then submits that same frame only through the already-existing shared-service gateway or explicitly configured same-host federation mesh. If submission is interrupted, a retry reuses the exact retained frame. If a submission receipt already exists, it returns `ALREADY_SUBMITTED_NO_SECOND_REQUEST`.
+
+The binding rejects GitHub Actions/CI/hosted execution. It also refuses to invent a federation destination when neither the existing shared gateway nor same-host mesh is configured.
+
+Current evidence truth after source repair:
+
+```text
+callable task -> existing publisher source binding: INSTALLED
+new bridge/runtime/listener/scheduler: NONE
+second request capability: FAIL-CLOSED
+hosted execution substitution: FAIL-CLOSED
+authentic RERUN_REQUEST_BOUND.json from resident invocation: NOT OBSERVED
+authentic federation submission receipt: NOT OBSERVED
+REQUEST_BOUND runtime predicate: NOT CLAIMED
+downstream transitions: NOT ADVANCED
+```
+
+A GitHub merge of this binding is source repair only. The experiment may advance only when the callable binding runs in its existing resident/federation context and emits the authentic request-bound artifact.
