@@ -427,3 +427,40 @@ all downstream Experiment transitions: NOT ADVANCED
 ```
 
 No field-level packet/frame validation was performed because the authoritative `RERUN_REQUEST_BOUND.json` bytes were not observable. The next admissible action remains observation through an already-existing authoritative resident-state/evidence surface if one becomes available; it must not be replaced by another invocation mechanism or by repository absence.
+
+
+## 2026-09-18 established-native read-capability investigation
+
+The canonical registry, mirror handoff, and attempt-reference map were re-read at main `0065239f6a0848ee970ad000403798dabbf741e8` before this investigation. No invocation source was changed and no `SV002-ATTEMPT-001` through `SV002-ATTEMPT-013` path was retried.
+
+The established StegVerse-002 native architecture was then checked only for an already-existing authoritative read capability that could expose the resident-local rerun artifacts without adding another path. The current Universal InTr registry already contains:
+
+```text
+sv002-self-characterization
+  operation: REQUEST_SELF_CHARACTERIZATION
+  custody_mode: EXACT_BYTES
+  downstream owner: StegVerse-002/.github
+
+sv002-public-observe
+  operation: READ_OBSERVATION
+  destination: SV002:ObservationProjection
+  display projection: Site:SV002PublicObservation
+```
+
+These do not satisfy the required observation. `sv002-self-characterization` is the request/materialization profile, not a resident-state reader. `sv002-public-observe` is the separate Site/public-observation path and is outside this bounded continuation. The established native StegOS host code contains no references to `RERUN_REQUEST_BOUND.json`, `RERUN_REQUEST_SUBMISSION.json`, or `resident-executor.latest.json`, and therefore exposes no already-existing route for returning those exact resident-local bytes.
+
+Result:
+
+```text
+existing authoritative resident-state/evidence reader for rerun artifacts: NOT FOUND
+new bridge/listener/wrapper/read endpoint introduced: NO
+device prerequisite introduced: NO
+Site path used: NO
+workflow runtime used: NO
+second request created: NO
+authentic RERUN_REQUEST_BOUND.json bytes observed: NO
+REQUEST_BOUND: NOT CLAIMED
+downstream transitions: NOT ADVANCED
+```
+
+This is an unresolved observation boundary only. It is not evidence that the resident-local artifacts are absent and not evidence that resident execution failed.
