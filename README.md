@@ -124,3 +124,10 @@ The binding is exactly-once: one deterministic packet is bound to one retained c
 For `STEGVERSE-002-EXPERIMENT-RERUN-001` / COSV `50000000107000`, the callable/executor repair remains source-complete, but runtime progress is not promoted from source state. The rerun binding writes `RERUN_REQUEST_BOUND.json` and `RERUN_REQUEST_SUBMISSION.json` under the resident self-characterization state root, while the resident executor writes `resident-runtime/state/resident-executor.latest.json`.
 
 A bounded reconciliation on 2026-09-18 found no existing experiment-owned authoritative read surface available to this conversation that exposes those resident-local artifacts. Standing-device/remote-device rediscovery was not used because it is prohibited by the experiment attempt map. Repository absence is not interpreted as resident-local absence or execution failure. `REQUEST_BOUND` and every downstream runtime predicate therefore remain unclaimed until the authentic resident bytes are observed and same-execution correlated.
+
+
+## SV002 established-native resident read-capability result — 2026-09-18
+
+A bounded check of the already-established StegVerse-002 native architecture found no authoritative reader for the rerun's resident-local evidence files. The existing `sv002-self-characterization` Universal InTr profile is request/materialization transport, while `sv002-public-observe` is a separate Site/public-observation projection and is not used for this continuation. The native StegOS host source contains no binding to `RERUN_REQUEST_BOUND.json`, `RERUN_REQUEST_SUBMISSION.json`, or `resident-executor.latest.json`.
+
+No new read endpoint, bridge, listener, wrapper, device dependency, Site path, workflow runtime, or second request was created. `REQUEST_BOUND` remains unclaimed because the authentic resident bytes remain unobserved; repository/source absence is not treated as resident-local absence.
