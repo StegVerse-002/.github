@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,6 +14,13 @@ SPEC = importlib.util.spec_from_file_location(
 )
 M = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(M)
+
+EXEC_SPEC = importlib.util.spec_from_file_location(
+    "sv002_resident_executor",
+    ROOT / "resident-runtime" / "resident_executor.py",
+)
+E = importlib.util.module_from_spec(EXEC_SPEC)
+EXEC_SPEC.loader.exec_module(E)
 
 
 class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
@@ -49,6 +57,51 @@ class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
             bound = json.loads((state / "RERUN_REQUEST_BOUND.json").read_text())
             self.assertEqual(bound["state"], "REQUEST_BOUND")
             self.assertEqual(bound["invocation_count"], 1)
+
+    def test_blocked_submission_preserves_request_bound_evidence(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state"
+            env = {
+                "STEGVERSE_SELF_CHAR_STATE_ROOT": str(state),
+                "STEGVERSE_ORG_FEDERATION_ROOT": "",
+                "STEGVERSE_ORG_FEDERATION_GATEWAY_URL": "",
+                "GITHUB_ACTIONS": "",
+                "CI": "",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                with self.assertRaisesRegex(RuntimeError, "publication edge not configured") as caught:
+                    M.invoke_once()
+                result = M._blocked_result(caught.exception)
+
+            bound = json.loads((state / "RERUN_REQUEST_BOUND.json").read_text())
+            self.assertTrue(result["request_bound_claimed"])
+            self.assertEqual(result["goal_task_id"], "STEGVERSE-002-EXPERIMENT-RERUN-001")
+            self.assertEqual(result["cosv_id"], "50000000107000")
+            self.assertEqual(result["experiment_id"], "STEGVERSE-002-SELF-CHARACTERIZATION-001")
+            self.assertEqual(result["operation"], "REQUEST_SELF_CHARACTERIZATION")
+            self.assertEqual(result["invocation_count"], 1)
+            self.assertEqual(result["packet_id"], bound["packet_id"])
+            self.assertEqual(result["packet_sha256"], bound["packet_sha256"])
+            self.assertEqual(result["manifest_sha256"], bound["manifest_sha256"])
+            self.assertEqual(result["frame_sha256"], bound["frame_sha256"])
+            self.assertFalse((state / "RERUN_REQUEST_SUBMISSION.json").exists())
+
+    def test_resident_executor_preserves_structured_blocked_callable_result(self):
+        blocked = {
+            "schema": "stegverse.sv002-rerun-callable-result/v1",
+            "goal_task_id": "STEGVERSE-002-EXPERIMENT-RERUN-001",
+            "cosv_id": "50000000107000",
+            "state": "BLOCKED",
+            "reason": "existing federation publication edge not configured",
+            "request_bound_claimed": True,
+            "packet_id": "SV002-RERUN-TEST",
+            "frame_sha256": "sha256:" + "a" * 64,
+        }
+        proc = SimpleNamespace(returncode=2, stderr="")
+        with patch.object(E, "run_json", return_value=(proc, blocked)):
+            result = E.consume_declared_sv002_callable()
+        self.assertEqual(result, blocked)
+        self.assertTrue(result["request_bound_claimed"])
 
     def test_hosted_execution_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
