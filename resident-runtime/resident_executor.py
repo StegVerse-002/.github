@@ -105,13 +105,15 @@ def main():
     if bad:
         raise SystemExit("hosted runtime prohibited: "+",".join(bad))
     iteration=0
+    callable_attempted=False
     callable_completed=False
     callable_result=None
     while True:
         iteration+=1
         error=None
         try:
-            if not callable_completed:
+            if not callable_attempted:
+                callable_attempted=True
                 callable_result=consume_declared_sv002_callable()
                 callable_completed=True
             fed=cycle()
@@ -126,6 +128,7 @@ def main():
             "state":"RUNNING" if error is None else "DEGRADED",
             "federation_cycle":fed,
             "sv002_callable":callable_result,
+            "sv002_callable_attempted":callable_attempted,
             "sv002_callable_completed":callable_completed,
             "error":error,
             "persistent":not a.once,
