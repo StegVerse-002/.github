@@ -145,3 +145,10 @@ Accordingly the prior result remains controlling without another discovery sweep
 Direct review of Master Records SV002 receipt/custody surfaces confirms that the current rerun has not reached Master Records at all. There is no current Goal/COSV receipt, no current-rerun `SV002-RUN-*`, no custody intake, and no reconstruction receipt. The Master Records endpoint only accepts the complete canonical principal artifact set after a qualifying run exists.
 
 The exact current-rerun failure/observation boundary is therefore `REQUEST_BOUND`: the source-level callable/executor binding exists, but no authentic `RERUN_REQUEST_BOUND.json` runtime receipt has been retained/observed. Master Records reconstruction is not failing; it has not been entered. Historical browser/infrastructure receipts remain separate and non-admissible for this rerun.
+
+
+## SV002 REQUEST_BOUND evidence-loss repair — 2026-09-18
+
+The existing rerun callable writes `RERUN_REQUEST_BOUND.json` before federation publication, but a later publication failure previously caused the callable to report `request_bound_claimed=false`, and the resident executor then discarded that structured nonzero child result. This could erase the distinction between “callable never bound the request” and “request was bound but publication failed.”
+
+The bounded repair preserves validated request-bound identity in the existing callable result and existing `resident-executor.latest.json` heartbeat without creating another request, runtime, transport, listener, scheduler, reader, Site path, device prerequisite, or authority surface. Authentic runtime evidence is still required before `REQUEST_BOUND` can be promoted.
