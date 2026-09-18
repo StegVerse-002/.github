@@ -337,3 +337,34 @@ downstream transitions: NOT ADVANCED
 ```
 
 Any next repair must modify only this missing dereference/exposure inside the already-existing resident execution context. It must not create another invocation mechanism or revive any SV002-ATTEMPT-001 through -013 path.
+
+
+## 2026-09-18 resident callable dereference repair
+
+The previously proven exposure gap has been repaired inside the existing resident execution context only.
+
+```text
+resident-runtime/resident_executor.py
+  -> reads resident-runtime/activation-manifest.json
+  -> requires callable_task_id = STEGVERSE-002-EXPERIMENT-RERUN-001
+  -> requires callable_operation = REQUEST_SELF_CHARACTERIZATION
+  -> requires callable_publisher_binding = resident-runtime/invoke_sv002_experiment_rerun.py
+  -> requires callable_invocation_count = 1
+  -> invokes that exact already-installed binding once per resident activation
+  -> then continues the existing federation_cycle.py
+```
+
+The stale `sv002-sdk-query.request.json` / `run_sv002_self_characterization_roundtrip.py` execution branch has been removed from the resident executor. No replacement task source, wrapper, bridge, listener, runtime, scheduler, host, Site path, device path, workflow execution, or second request was introduced.
+
+The executor marks the callable as attempted before invoking it. Therefore a failed submission is not retried on every poll. A later resident-process restart may re-enter the already-installed callable, whose own write-once `RERUN_REQUEST_BOUND.json` and `RERUN_REQUEST_SUBMISSION.json` semantics guarantee reuse of the same immutable request/frame and prevent a second request.
+
+Source repair does not establish runtime execution. Required evidence remains:
+
+```text
+authentic resident RERUN_REQUEST_BOUND.json: NOT YET OBSERVED
+authentic resident RERUN_REQUEST_SUBMISSION.json: NOT YET OBSERVED
+REQUEST_BOUND: NOT CLAIMED
+downstream Experiment transitions: NOT ADVANCED
+```
+
+The next admissible action is observation/consumption of those authentic resident-emitted artifacts from the existing execution context. Do not substitute source state, merge state, CI, or any alternative invocation mechanism.
