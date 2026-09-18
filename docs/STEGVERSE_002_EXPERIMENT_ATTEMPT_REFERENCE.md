@@ -154,3 +154,21 @@ WHY_OLD_DISPOSITION_NO_LONGER_CONTROLS: <specific reason>
 ```
 
 If those fields cannot be truthfully completed, the approach is a duplicate and must not be retried.
+
+
+## Explicit non-current path exclusions
+
+The attempt map also guards against reviving stale experiment-local source merely because a surviving file still names it.
+
+### Legacy resident one-shot reference — NOT CURRENT INVOCATION
+
+Current `resident-runtime/resident_executor.py` contains references to:
+
+```text
+resident-runtime/control/sv002-sdk-query.request.json
+resident-runtime/run_sv002_self_characterization_roundtrip.py
+```
+
+Neither referenced file exists on current main. Do not recreate, restore, or wrap those files merely to obtain a runnable path. Without newly observed experiment-local evidence that this exact retired one-shot mechanism is again canonical, doing so fingerprints as `DUPLICATE_OF: SV002-ATTEMPT-007`.
+
+The current experiment-owned endpoint is instead represented by the ACTIVE `stegverse-002.self-characterization` service and the existing organization-kernel InTr federation publication/consumption semantics. This statement identifies the currently installed source edge; it does not claim live submission, `REQUEST_BOUND`, runtime materialization, or principal execution.
