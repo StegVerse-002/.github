@@ -563,3 +563,31 @@ downstream failure point:
 This means the exact failure boundary is upstream of Master Records and upstream of Node/InTr materialization evidence. It is not a Master Records reconstruction defect. The current chain never supplies Master Records with a qualifying rerun artifact set because the very first runtime transition, `REQUEST_BOUND`, is not authentically retained/observable.
 
 Historical browser evidence and the retired `SV002-INTERLOCK-OBSERVATION-20260901-001` remain separate and must not be used to promote the current rerun.
+
+
+## 2026-09-18 REQUEST_BOUND evidence-loss repair
+
+A bounded source review isolated an evidence-loss defect inside the already-existing callable/executor path.
+
+The callable writes `RERUN_REQUEST_BOUND.json` before attempting federation publication. If publication then fails, the old exception result hard-coded `request_bound_claimed=false`. The resident executor also raised immediately on the child's nonzero return code, discarding the structured child result before writing `resident-runtime/state/resident-executor.latest.json`.
+
+Therefore an authentic runtime state of:
+
+```text
+callable invoked
+-> RERUN_REQUEST_BOUND.json durably written
+-> existing federation publication edge unavailable/fails
+```
+
+could be projected by the existing executor heartbeat indistinguishably from a pre-binding failure.
+
+The bounded repair changes no invocation, request, transport, scheduler, runtime, listener, Site path, device path, or authority surface:
+
+- `invoke_sv002_experiment_rerun.py` now validates any already-written `RERUN_REQUEST_BOUND.json` on failure and emits the exact Goal/COSV/experiment/operation/invocation_count/packet_id/packet_sha256/manifest_sha256/frame_sha256 binding when valid;
+- `resident_executor.py` preserves a structured `BLOCKED` callable result instead of discarding it on child return code 2;
+- the existing executor heartbeat now exposes `sv002_request_bound_observed=true` only when that structured result carries a validated `request_bound_claimed=true`;
+- successful exactly-once submission semantics are unchanged.
+
+This repair establishes only diagnostic/evidence-retention capability in the existing resident output. It does not establish that a resident process ran after the change and does not promote `REQUEST_BOUND`.
+
+Promotion remains gated by authentic resident evidence showing the exact validated bound fields. If the authentic executor heartbeat later shows `sv002_callable_attempted=true`, a structured blocked result, and `sv002_request_bound_observed=true`, the failure is downstream of binding. If it shows no callable attempt, the failure is invocation-side. If no authentic heartbeat is observable, runtime outcome remains unresolved.
