@@ -87,6 +87,67 @@ def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _request_bound_evidence() -> dict[str, Any]:
+    path = _state_root() / "RERUN_REQUEST_BOUND.json"
+    base = {
+        "request_bound_claimed": False,
+        "request_bound_ref": str(path),
+    }
+    if not path.is_file():
+        return base
+    try:
+        bound = _load(path)
+        expected = {
+            "goal_task_id": GOAL_TASK_ID,
+            "cosv_id": COSV_ID,
+            "experiment_id": EXPERIMENT_ID,
+            "operation": OPERATION,
+            "invocation_count": INVOCATION_COUNT,
+            "state": "REQUEST_BOUND",
+        }
+        for key, wanted in expected.items():
+            if bound.get(key) != wanted:
+                raise RuntimeError(f"persisted REQUEST_BOUND {key} mismatch")
+        frame = bound.get("frame")
+        if not isinstance(frame, dict):
+            raise RuntimeError("persisted REQUEST_BOUND frame missing")
+        packet = K.recover_packet(frame)
+        if packet.get("packet_id") != bound.get("packet_id"):
+            raise RuntimeError("persisted REQUEST_BOUND packet_id mismatch")
+        if frame.get("packet_sha256") != bound.get("packet_sha256"):
+            raise RuntimeError("persisted REQUEST_BOUND packet_sha256 mismatch")
+        if frame.get("frame_sha256") != bound.get("frame_sha256"):
+            raise RuntimeError("persisted REQUEST_BOUND frame_sha256 mismatch")
+        return {
+            **base,
+            "request_bound_claimed": True,
+            "request_bound_schema": bound.get("schema"),
+            "goal_task_id": bound["goal_task_id"],
+            "cosv_id": bound["cosv_id"],
+            "experiment_id": bound["experiment_id"],
+            "operation": bound["operation"],
+            "invocation_count": bound["invocation_count"],
+            "packet_id": bound["packet_id"],
+            "packet_sha256": bound["packet_sha256"],
+            "manifest_sha256": bound["manifest_sha256"],
+            "frame_sha256": bound["frame_sha256"],
+        }
+    except Exception as exc:
+        return {**base, "request_bound_validation_error": str(exc)}
+
+
+def _blocked_result(exc: Exception) -> dict[str, Any]:
+    return {
+        "schema": "stegverse.sv002-rerun-callable-result/v1",
+        "goal_task_id": GOAL_TASK_ID,
+        "cosv_id": COSV_ID,
+        "state": "BLOCKED",
+        "reason": str(exc),
+        **_request_bound_evidence(),
+        "principal_execution_claimed": False,
+    }
+
+
 def build_frozen_request() -> tuple[dict[str, Any], dict[str, Any]]:
     binding = _load(BINDING_PATH)
     expected = binding.get("expected_request") or {}
@@ -286,15 +347,7 @@ def main() -> int:
     try:
         result = invoke_once()
     except Exception as exc:
-        print(json.dumps({
-            "schema": "stegverse.sv002-rerun-callable-result/v1",
-            "goal_task_id": GOAL_TASK_ID,
-            "cosv_id": COSV_ID,
-            "state": "BLOCKED",
-            "reason": str(exc),
-            "request_bound_claimed": False,
-            "principal_execution_claimed": False,
-        }, sort_keys=True))
+        print(json.dumps(_blocked_result(exc), sort_keys=True))
         return 2
     print(json.dumps(result, sort_keys=True))
     return 0

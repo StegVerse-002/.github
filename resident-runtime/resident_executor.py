@@ -78,10 +78,12 @@ def consume_declared_sv002_callable():
     if result.get("cosv_id")!="50000000107000":
         raise RuntimeError("SV002 callable result COSV mismatch")
     if p.returncode!=0:
-        raise RuntimeError(
-            "SV002 callable publisher failed: "
-            +str(result.get("reason") or p.stderr[-1024:] or "unknown")
-        )
+        if result.get("state")!="BLOCKED":
+            raise RuntimeError(
+                "SV002 callable publisher failed without BLOCKED result: "
+                +str(result.get("reason") or p.stderr[-1024:] or "unknown")
+            )
+        return result
     if result.get("state") not in {
         "SUBMITTED_EXISTING_FEDERATION_EDGE",
         "ALREADY_SUBMITTED_NO_SECOND_REQUEST",
@@ -115,6 +117,11 @@ def main():
             if not callable_attempted:
                 callable_attempted=True
                 callable_result=consume_declared_sv002_callable()
+                if callable_result.get("state")=="BLOCKED":
+                    raise RuntimeError(
+                        "SV002 callable publisher failed: "
+                        +str(callable_result.get("reason") or "unknown")
+                    )
                 callable_completed=True
             fed=cycle()
         except Exception as exc:
@@ -130,6 +137,10 @@ def main():
             "sv002_callable":callable_result,
             "sv002_callable_attempted":callable_attempted,
             "sv002_callable_completed":callable_completed,
+            "sv002_request_bound_observed":bool(
+                isinstance(callable_result,dict)
+                and callable_result.get("request_bound_claimed") is True
+            ),
             "error":error,
             "persistent":not a.once,
             "github_actions_runtime_authority":"NONE",
