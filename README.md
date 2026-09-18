@@ -152,3 +152,12 @@ The exact current-rerun failure/observation boundary is therefore `REQUEST_BOUND
 The existing rerun callable writes `RERUN_REQUEST_BOUND.json` before federation publication, but a later publication failure previously caused the callable to report `request_bound_claimed=false`, and the resident executor then discarded that structured nonzero child result. This could erase the distinction between “callable never bound the request” and “request was bound but publication failed.”
 
 The bounded repair preserves validated request-bound identity in the existing callable result and existing `resident-executor.latest.json` heartbeat without creating another request, runtime, transport, listener, scheduler, reader, Site path, device prerequisite, or authority surface. Authentic runtime evidence is still required before `REQUEST_BOUND` can be promoted.
+
+
+## SV002 REQUEST_BOUND canonical Master Records custody — 2026-09-18
+
+Receipt-chain review identified a concrete post-binding evidence defect for `STEGVERSE-002-EXPERIMENT-RERUN-001`. The deterministic rerun packet is `SV002-RERUN-C796D0BFD181CEC5D99E4C23` with manifest SHA-256 `29222a589eb4c2958d2787743e266f067ee07e1373c51f60b553f1f359789828`. Neither identity appears in canonical Master Records custody.
+
+The ecosystem-wide custody invariant requires every observed governed state transition to emit a canonical state receipt and submit it to Master Records. The rerun callable previously persisted `RERUN_REQUEST_BOUND.json` locally but did not submit that `REQUEST_BOUND` transition through the existing canonical state-transition custody client.
+
+The callable now reuses `StegVerse-Labs/.github/workers/canonical_state_transition_custody.py`, writes the exact canonical REQUEST_BOUND state receipt once, requires Master Records `RECORDED` plus `reconstruction_status=PASS`, retains the returned custody identity, and only then proceeds to the existing federation publication edge. If the canonical custody client or authoritative Master Records surface is unavailable, the rerun fails closed before federation submission. No second request, runtime, scheduler, listener, bridge, Site path, custody store, transition authority, or execution authority is introduced.

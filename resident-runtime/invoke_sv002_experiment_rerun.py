@@ -87,6 +87,78 @@ def _canonical_sha256(value: Any) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _canonical_custody_client() -> Any:
+    raw = (os.environ.get("STEGVERSE_REPO_ROOTS_JSON") or "").strip()
+    try:
+        roots = json.loads(raw) if raw else {}
+    except Exception as exc:
+        raise RuntimeError("canonical Master Records repository roots invalid") from exc
+    labs_root_raw = str(roots.get("StegVerse-Labs/.github") or "").strip()
+    if not labs_root_raw:
+        raise RuntimeError("canonical Master Records custody client unavailable")
+    client_path = Path(labs_root_raw).expanduser().resolve() / "workers" / "canonical_state_transition_custody.py"
+    if not client_path.is_file():
+        raise RuntimeError("canonical Master Records custody client unavailable")
+    spec = importlib.util.spec_from_file_location("canonical_state_transition_custody", client_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("canonical Master Records custody client import failed")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _custody_request_bound(state_root: Path, bound: dict[str, Any]) -> dict[str, Any]:
+    receipt_path = state_root / "RERUN_REQUEST_BOUND_MASTER_RECORDS_RECEIPT.json"
+    custody_path = state_root / "RERUN_REQUEST_BOUND_MASTER_RECORDS_CUSTODY.json"
+    client = _canonical_custody_client()
+    if receipt_path.is_file():
+        receipt = _load(receipt_path)
+    else:
+        receipt = client.build_state_receipt(
+            transition_id="SV002_REQUEST_BOUND",
+            transition_sequence=1,
+            subject_or_correlation_id=bound["packet_id"],
+            transition_outcome="OBSERVED",
+            prior_state_ref_or_hash=bound["request_sha256"],
+            resulting_state_ref_or_hash=bound["frame_sha256"],
+            governance_decision_ref_where_applicable=None,
+            transition_evidence={
+                "goal_task_id": bound["goal_task_id"],
+                "cosv_id": bound["cosv_id"],
+                "experiment_id": bound["experiment_id"],
+                "operation": bound["operation"],
+                "invocation_count": bound["invocation_count"],
+                "state": bound["state"],
+                "packet_id": bound["packet_id"],
+                "packet_sha256": bound["packet_sha256"],
+                "request_sha256": bound["request_sha256"],
+                "manifest_sha256": bound["manifest_sha256"],
+                "frame_sha256": bound["frame_sha256"],
+            },
+        )
+        _write_once(receipt_path, receipt)
+    result = client.submit_state_receipt(receipt)
+    if result.get("state") != "RECORDED" or result.get("reconstruction_status") != "PASS":
+        raise RuntimeError(
+            "canonical Master Records REQUEST_BOUND custody not recorded: "
+            + str(result.get("reason") or result.get("state") or "UNKNOWN")
+        )
+    response = {
+        "schema": "stegverse.sv002-request-bound-master-records-custody/v1",
+        "state": "RECORDED",
+        "reconstruction_status": "PASS",
+        "packet_id": bound["packet_id"],
+        "receipt_sha256": result.get("receipt_sha256"),
+        "reconstructed_receipt_sha256": result.get("reconstructed_receipt_sha256"),
+        "custody_receipt_id": result.get("custody_receipt_id"),
+        "master_record_ref": result.get("master_record_ref"),
+        "master_records_grants_transition_authority": result.get("master_records_grants_transition_authority"),
+        "authority_effect": result.get("authority_effect"),
+    }
+    _write_once(custody_path, response)
+    return response
+
+
 def _request_bound_evidence() -> dict[str, Any]:
     path = _state_root() / "RERUN_REQUEST_BOUND.json"
     base = {
@@ -118,6 +190,8 @@ def _request_bound_evidence() -> dict[str, Any]:
             raise RuntimeError("persisted REQUEST_BOUND packet_sha256 mismatch")
         if frame.get("frame_sha256") != bound.get("frame_sha256"):
             raise RuntimeError("persisted REQUEST_BOUND frame_sha256 mismatch")
+        custody_path = _state_root() / "RERUN_REQUEST_BOUND_MASTER_RECORDS_CUSTODY.json"
+        custody = _load(custody_path) if custody_path.is_file() else None
         return {
             **base,
             "request_bound_claimed": True,
@@ -131,6 +205,10 @@ def _request_bound_evidence() -> dict[str, Any]:
             "packet_sha256": bound["packet_sha256"],
             "manifest_sha256": bound["manifest_sha256"],
             "frame_sha256": bound["frame_sha256"],
+            "request_bound_master_records_state": custody.get("state") if custody else None,
+            "request_bound_master_records_reconstruction_status": custody.get("reconstruction_status") if custody else None,
+            "request_bound_master_record_ref": custody.get("master_record_ref") if custody else None,
+            "request_bound_custody_receipt_id": custody.get("custody_receipt_id") if custody else None,
         }
     except Exception as exc:
         return {**base, "request_bound_validation_error": str(exc)}
@@ -289,6 +367,7 @@ def invoke_once() -> dict[str, Any]:
     state_root = _state_root()
     state_root.mkdir(parents=True, exist_ok=True)
     frame, bound = _load_or_bind_frame(state_root)
+    custody = _custody_request_bound(state_root, bound)
     submission_path = state_root / "RERUN_REQUEST_SUBMISSION.json"
 
     if submission_path.is_file():
@@ -299,6 +378,10 @@ def invoke_once() -> dict[str, Any]:
             **prior,
             "state": "ALREADY_SUBMITTED_NO_SECOND_REQUEST",
             "request_bound_state": bound["state"],
+            "request_bound_master_records_state": custody["state"],
+            "request_bound_master_records_reconstruction_status": custody["reconstruction_status"],
+            "request_bound_master_record_ref": custody["master_record_ref"],
+            "request_bound_custody_receipt_id": custody["custody_receipt_id"],
         }
 
     gateway_url = os.environ.get("STEGVERSE_ORG_FEDERATION_GATEWAY_URL", "").strip()
@@ -332,6 +415,10 @@ def invoke_once() -> dict[str, Any]:
         "invocation_count": INVOCATION_COUNT,
         "state": "SUBMITTED_EXISTING_FEDERATION_EDGE",
         "request_bound_state": "REQUEST_BOUND",
+        "request_bound_master_records_state": custody["state"],
+        "request_bound_master_records_reconstruction_status": custody["reconstruction_status"],
+        "request_bound_master_record_ref": custody["master_record_ref"],
+        "request_bound_custody_receipt_id": custody["custody_receipt_id"],
         "packet_id": bound["packet_id"],
         "frame_sha256": bound["frame_sha256"],
         "transport": transport,

@@ -46,7 +46,15 @@ class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
                 "GITHUB_ACTIONS": "",
                 "CI": "",
             }
-            with patch.dict(os.environ, env, clear=False):
+            custody = {
+                "state": "RECORDED",
+                "reconstruction_status": "PASS",
+                "master_record_ref": "master-record:state-transition:sha256:test",
+                "custody_receipt_id": "master-records-state-transition-receipt:test",
+            }
+            with patch.dict(os.environ, env, clear=False), patch.object(
+                M, "_custody_request_bound", return_value=custody
+            ):
                 first = M.invoke_once()
                 second = M.invoke_once()
 
@@ -68,7 +76,15 @@ class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
                 "GITHUB_ACTIONS": "",
                 "CI": "",
             }
-            with patch.dict(os.environ, env, clear=False):
+            custody = {
+                "state": "RECORDED",
+                "reconstruction_status": "PASS",
+                "master_record_ref": "master-record:state-transition:sha256:test",
+                "custody_receipt_id": "master-records-state-transition-receipt:test",
+            }
+            with patch.dict(os.environ, env, clear=False), patch.object(
+                M, "_custody_request_bound", return_value=custody
+            ):
                 with self.assertRaisesRegex(RuntimeError, "publication edge not configured") as caught:
                     M.invoke_once()
                 result = M._blocked_result(caught.exception)
@@ -102,6 +118,52 @@ class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
             result = E.consume_declared_sv002_callable()
         self.assertEqual(result, blocked)
         self.assertTrue(result["request_bound_claimed"])
+
+    def test_request_bound_requires_canonical_master_records_custody(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state"
+            frame, bound = M._load_or_bind_frame(state)
+            class FakeCustody:
+                @staticmethod
+                def build_state_receipt(**kwargs):
+                    return {
+                        "schema": "stegverse.canonical-state-transition-receipt/v1",
+                        **kwargs,
+                        "recorded_at": "2026-09-18T00:00:00Z",
+                        "authority_effect": "NONE_STATE_RECEIPT_ONLY",
+                        "proof_scope": "THIS_TRANSITION_ONLY",
+                        "proof_ceiling": "OBSERVED_STATE_TRANSITION_AND_CUSTODY_ONLY",
+                        "master_records_may_grant_transition_authority": False,
+                        "master_records_may_grant_execution_authority": False,
+                    }
+
+                @staticmethod
+                def submit_state_receipt(receipt):
+                    self.assertEqual(receipt["transition_id"], "SV002_REQUEST_BOUND")
+                    self.assertEqual(receipt["transition_sequence"], 1)
+                    self.assertEqual(receipt["subject_or_correlation_id"], bound["packet_id"])
+                    self.assertEqual(receipt["transition_evidence"]["goal_task_id"], "STEGVERSE-002-EXPERIMENT-RERUN-001")
+                    self.assertEqual(receipt["transition_evidence"]["cosv_id"], "50000000107000")
+                    self.assertEqual(receipt["transition_evidence"]["manifest_sha256"], bound["manifest_sha256"])
+                    self.assertEqual(receipt["transition_evidence"]["frame_sha256"], bound["frame_sha256"])
+                    return {
+                        "state": "RECORDED",
+                        "reconstruction_status": "PASS",
+                        "receipt_sha256": "a" * 64,
+                        "reconstructed_receipt_sha256": "a" * 64,
+                        "custody_receipt_id": "master-records-state-transition-receipt:test",
+                        "master_record_ref": "master-record:state-transition:sha256:" + "a" * 64,
+                        "master_records_grants_transition_authority": False,
+                        "authority_effect": "NONE_CUSTODY_RECONSTRUCTION_ONLY",
+                    }
+
+            with patch.object(M, "_canonical_custody_client", return_value=FakeCustody()):
+                result = M._custody_request_bound(state, bound)
+            self.assertEqual(result["state"], "RECORDED")
+            self.assertEqual(result["reconstruction_status"], "PASS")
+            self.assertTrue((state / "RERUN_REQUEST_BOUND_MASTER_RECORDS_RECEIPT.json").is_file())
+            self.assertTrue((state / "RERUN_REQUEST_BOUND_MASTER_RECORDS_CUSTODY.json").is_file())
+            self.assertIsNotNone(frame)
 
     def test_hosted_execution_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:
