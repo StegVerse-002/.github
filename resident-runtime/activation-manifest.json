@@ -34,7 +34,12 @@
     "service_id": "stegverse-002.self-characterization",
     "principal_repository": "StegVerse-002/micro-node-runtime",
     "cross_organization_principal_execution_allowed": false,
-    "master_records_required": true
+    "master_records_required": true,
+    "callable_task_id": "STEGVERSE-002-EXPERIMENT-RERUN-001",
+    "callable_operation": "REQUEST_SELF_CHARACTERIZATION",
+    "callable_publisher_binding": "resident-runtime/invoke_sv002_experiment_rerun.py",
+    "callable_invocation_count": 1,
+    "publisher_semantics": "EXISTING_ORG_KERNEL_FRAME_OR_SHARED_SERVICE_GATEWAY_ONLY"
   },
   "persistent_executor": {
     "state": "SOURCE_INSTALLED_ACTIVATION_EVIDENCE_PENDING",
