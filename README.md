@@ -101,3 +101,12 @@ The current canonical rerun identity is `STEGVERSE-002-EXPERIMENT-RERUN-001` wit
 `docs/STEGVERSE_002_EXPERIMENT_ATTEMPT_REFERENCE.md` is the mandatory preflight history for `STEGVERSE-002-EXPERIMENT-RERUN-001`. It assigns stable IDs to already-tried, non-working, non-conforming, or mis-scoped approaches and defines a duplicate-attempt gate. Before another rerun action is taken, the proposed action must be checked against that map; matching `DO_NOT_REPEAT` entries are not retried without genuinely new distinguishing evidence.
 
 The reference also enforces the current scope rule: other repositories/implementations are not precedent for the StegVerse-002 experiment and may be consulted only for a deliberately new approach after experiment-local evidence establishes a new failure.
+
+
+## Current SV002 rerun invocation truth
+
+For `STEGVERSE-002-EXPERIMENT-RERUN-001`, the experiment-owned current ingress is the ACTIVE `stegverse-002.self-characterization` service plus the existing organization-kernel InTr carrier/federation publication and consumption path. Repository commits and GitHub Actions are not that federation mesh and do not prove runtime ingress.
+
+The legacy `resident_executor.py` references to `resident-runtime/control/sv002-sdk-query.request.json` and `resident-runtime/run_sv002_self_characterization_roundtrip.py` are stale on current main because both referenced files are absent. They must not be restored as a substitute invocation path without genuinely new experiment-local evidence. The mandatory duplicate-attempt rules remain in `docs/STEGVERSE_002_EXPERIMENT_ATTEMPT_REFERENCE.md`.
+
+Authentic `REQUEST_BOUND`, principal execution, and same-execution reconstruction remain unobserved until the frozen request is consumed through the existing live federation edge.

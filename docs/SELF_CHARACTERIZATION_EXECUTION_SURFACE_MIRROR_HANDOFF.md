@@ -203,3 +203,45 @@ Before any further work on `STEGVERSE-002-EXPERIMENT-RERUN-001`, read `docs/STEG
 The attempt map currently records `SV002-ATTEMPT-001` through `SV002-ATTEMPT-013` plus experiment-owned `SV002-NONCONFORMING-001`. It specifically prohibits restarting from zero-connected-device framing, StegBrowser/browser substitution, nonce/A1-A4 rediscovery, GitHub workflow execution substitution, Site exposure/connector ownership, downstream custody-before-invocation, new wrapper/bridge construction, conversation-to-task bridge invention, full-path architecture reconstruction, cross-repository precedent, and device-command/deep-link rediscovery.
 
 External repositories are not architectural precedent for this rerun. They may be consulted only when the experiment-local execution produces a new failure and the proposed action satisfies the attempt map's explicit `NEW_APPROACH` test. This guard changes no runtime predicate; authentic rerun execution remains unclaimed.
+
+
+## 2026-09-17 attempt-map preflight and experiment-local invocation truth
+
+The rerun continuation re-read the mandatory attempt map and the frozen v0.3 experiment before proposing any execution action. The following duplicate paths were explicitly rejected and were not retried:
+
+```text
+DUPLICATE_OF: SV002-ATTEMPT-001 / SV002-ATTEMPT-013 — standing-device or device-command prerequisite
+DUPLICATE_OF: SV002-ATTEMPT-002 / SV002-NONCONFORMING-001 — browser/StegBrowser principal substitution
+DUPLICATE_OF: SV002-ATTEMPT-003 — nonce/A1-A4/WorkerCoordinator rediscovery
+DUPLICATE_OF: SV002-ATTEMPT-004 — GitHub workflow/CI as runtime execution
+DUPLICATE_OF: SV002-ATTEMPT-005 / 010 / 011 — Site or repository-placement reinterpretation
+DUPLICATE_OF: SV002-ATTEMPT-006 — downstream custody work before authentic invocation
+DUPLICATE_OF: SV002-ATTEMPT-007 / 008 — new wrapper/bridge or conversation-specific relay
+DUPLICATE_OF: SV002-ATTEMPT-009 — full architecture reconstruction
+DUPLICATE_OF: SV002-ATTEMPT-012 — external-repository precedent
+```
+
+Experiment-owned source establishes the current callable ingress semantics without importing another implementation:
+
+- service `stegverse-002.self-characterization` is ACTIVE and accepts `REQUEST_SELF_CHARACTERIZATION`;
+- the exact organization-local adapter is `resident-runtime/self_characterization_surface.py`;
+- the exact principal launcher remains `StegVerse-002/micro-node-runtime/tools/run_self_characterization_principal.py`;
+- `org-kernel/kernel.py` already defines addressed InTr packet construction, HB-derived carrier framing, federation publication, addressed-frame consumption, endpoint dispatch, and endpoint response;
+- `resident-runtime/federation_cycle.py` consumes the existing federation mesh or the already-defined shared-service gateway when its runtime URL is configured;
+- the local federation spool is explicitly same-host fallback only; repository commits are not the resident federation mesh and must not be treated as authentic runtime ingress.
+
+A stale experiment-local path was also identified and excluded. `resident-runtime/resident_executor.py` still references both `resident-runtime/control/sv002-sdk-query.request.json` and `resident-runtime/run_sv002_self_characterization_roundtrip.py`, but neither file exists on current main. Those references do not define the current rerun invocation and MUST NOT be recreated or restored merely to make execution appear possible. Doing so would repeat the wrapper/bridge class prohibited by `SV002-ATTEMPT-007` absent genuinely new evidence.
+
+Current live-evidence boundary:
+
+```text
+exact frozen request/manifest contract: PRESENT
+active organization-local self-characterization endpoint: PRESENT
+existing InTr carrier/federation publication+consumption semantics: PRESENT
+concrete resident federation mesh submission observed in this continuation: NO
+concrete configured shared-gateway submission observed in this continuation: NO
+authentic REQUEST_BOUND: NOT OBSERVED
+principal execution: NOT OBSERVED
+```
+
+No new runtime, listener, bridge, request daemon, device prerequisite, Site prerequisite, workflow runtime, or external-repository precedent was introduced. The next valid action is not another source reconstruction: it is consumption of exactly one frozen `REQUEST_SELF_CHARACTERIZATION` invocation through the already-existing live federation publication edge when that existing callable edge is exposed to the invocation context. A repository write or CI invocation must not be used as a substitute.
