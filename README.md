@@ -94,3 +94,10 @@ Missing required transition evidence means the action is not proven complete. So
 ## Current original rerun task
 
 The current canonical rerun identity is `STEGVERSE-002-EXPERIMENT-RERUN-001` with COSV `50000000107000`. It uses the existing registered StegVerseNode -> Interlock/InTr -> bounded EVENT_EPHEMERAL execution path and does not depend on `SHWP-SV002-FROZEN-CORPUS-MATERIALIZATION-001` as a prerequisite.
+
+
+## StegVerse-002 experiment attempt reference
+
+`docs/STEGVERSE_002_EXPERIMENT_ATTEMPT_REFERENCE.md` is the mandatory preflight history for `STEGVERSE-002-EXPERIMENT-RERUN-001`. It assigns stable IDs to already-tried, non-working, non-conforming, or mis-scoped approaches and defines a duplicate-attempt gate. Before another rerun action is taken, the proposed action must be checked against that map; matching `DO_NOT_REPEAT` entries are not retried without genuinely new distinguishing evidence.
+
+The reference also enforces the current scope rule: other repositories/implementations are not precedent for the StegVerse-002 experiment and may be consulted only for a deliberately new approach after experiment-local evidence establishes a new failure.

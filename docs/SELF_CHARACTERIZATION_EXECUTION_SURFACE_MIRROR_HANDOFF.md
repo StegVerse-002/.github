@@ -194,3 +194,12 @@ Authoritative closeout state:
 - manual prerequisite: none
 
 The earlier sections naming `SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001` as the current successor/callable owner are historical state and are superseded by this reconciliation. The next session must start from the merged canonical rerun identity above, trace the existing operation-specific StegVerseNode request builder/outbox consumer, and bind exactly one `REQUEST_SELF_CHARACTERIZATION` invocation through the existing Node -> Interlock/InTr -> bounded EVENT_EPHEMERAL path. Do not introduce a new runtime, scheduler, host, Healer dependency, alternate authority path, corpus prerequisite, or second user-operated device.
+
+
+## Attempt-reference guard — 2026-09-17
+
+Before any further work on `STEGVERSE-002-EXPERIMENT-RERUN-001`, read `docs/STEGVERSE_002_EXPERIMENT_ATTEMPT_REFERENCE.md` and fingerprint the proposed action against its attempt IDs. Any material match to a `DO_NOT_REPEAT` entry must be reported as `DUPLICATE_OF: SV002-ATTEMPT-XXX` and must not be retried unless a genuinely new distinguishing condition is stated. A renamed wrapper, branch, nonce, bridge, observer, PR, or another repository implementing the same idea does not qualify as a new approach.
+
+The attempt map currently records `SV002-ATTEMPT-001` through `SV002-ATTEMPT-013` plus experiment-owned `SV002-NONCONFORMING-001`. It specifically prohibits restarting from zero-connected-device framing, StegBrowser/browser substitution, nonce/A1-A4 rediscovery, GitHub workflow execution substitution, Site exposure/connector ownership, downstream custody-before-invocation, new wrapper/bridge construction, conversation-to-task bridge invention, full-path architecture reconstruction, cross-repository precedent, and device-command/deep-link rediscovery.
+
+External repositories are not architectural precedent for this rerun. They may be consulted only when the experiment-local execution produces a new failure and the proposed action satisfies the attempt map's explicit `NEW_APPROACH` test. This guard changes no runtime predicate; authentic rerun execution remains unclaimed.
