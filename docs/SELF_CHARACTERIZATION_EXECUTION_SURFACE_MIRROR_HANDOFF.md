@@ -591,3 +591,36 @@ The bounded repair changes no invocation, request, transport, scheduler, runtime
 This repair establishes only diagnostic/evidence-retention capability in the existing resident output. It does not establish that a resident process ran after the change and does not promote `REQUEST_BOUND`.
 
 Promotion remains gated by authentic resident evidence showing the exact validated bound fields. If the authentic executor heartbeat later shows `sv002_callable_attempted=true`, a structured blocked result, and `sv002_request_bound_observed=true`, the failure is downstream of binding. If it shows no callable attempt, the failure is invocation-side. If no authentic heartbeat is observable, runtime outcome remains unresolved.
+
+
+## 2026-09-18 canonical REQUEST_BOUND custody repair
+
+Direct Master Records tracing was extended beyond the SV002 full-artifact intake. The current deterministic rerun identity is:
+
+```text
+packet_id: SV002-RERUN-C796D0BFD181CEC5D99E4C23
+manifest_sha256: 29222a589eb4c2958d2787743e266f067ee07e1373c51f60b553f1f359789828
+```
+
+Neither identity is retained in `master-records/orchestration` or `master-records/.github`, including the canonical per-state-transition custody surfaces.
+
+That review exposed the actual missing seam: the current callable emits a local `RERUN_REQUEST_BOUND.json`, but current source does not emit/submit a canonical state-transition receipt for `REQUEST_BOUND` to the existing Master Records custody authority, despite the canonical ecosystem invariant requiring every observed governed state transition to be custodied and reconstructed there.
+
+The bounded repair therefore reuses the existing canonical client at `StegVerse-Labs/.github/workers/canonical_state_transition_custody.py`. After the immutable request/frame is bound, the callable:
+
+1. emits one `stegverse.canonical-state-transition-receipt/v1` for `SV002_REQUEST_BOUND`;
+2. binds Goal/COSV/experiment/operation/invocation_count/packet/request/manifest/frame evidence;
+3. submits it to the existing canonical Master Records state-transition custody surface;
+4. requires `state=RECORDED` and `reconstruction_status=PASS`;
+5. retains the returned custody/master-record identity locally;
+6. proceeds to federation publication only after that exact custody/reconstruction return.
+
+If canonical custody is unavailable or fails reconstruction, the callable fails closed before federation submission. This adds no alternate custody implementation or authority surface.
+
+Runtime nonclaim remains:
+
+```text
+authentic post-repair resident execution: NOT YET OBSERVED
+REQUEST_BOUND Master Records RECORDED+PASS for the real rerun: NOT YET OBSERVED
+parent REQUEST_BOUND predicate: NOT YET PROMOTED
+```
