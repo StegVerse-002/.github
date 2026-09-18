@@ -368,3 +368,33 @@ downstream Experiment transitions: NOT ADVANCED
 ```
 
 The next admissible action is observation/consumption of those authentic resident-emitted artifacts from the existing execution context. Do not substitute source state, merge state, CI, or any alternative invocation mechanism.
+
+
+## 2026-09-18 resident evidence observation after executor repair
+
+A bounded observation was performed after merge `fe3d4d41497cf0b8948ffefc6be9a6a6ce662526`. No invocation source was changed.
+
+Observed current StegVerse-002 repository evidence surfaces:
+
+```text
+resident-runtime/state/RERUN_REQUEST_BOUND.json: NOT PRESENT
+resident-runtime/state/RERUN_REQUEST_SUBMISSION.json: NOT PRESENT
+resident-runtime/state/resident-executor.latest.json: NOT PRESENT
+resident-runtime/federation/latest-cycle.json: NOT PRESENT
+```
+
+Repository-wide exact searches for `RERUN_REQUEST_BOUND.json`, `RERUN_REQUEST_SUBMISSION.json`, `SUBMITTED_EXISTING_FEDERATION_EDGE`, `SV002-RERUN-`, and the Goal/frame identity found only source, test, and handoff definitions. No resident-emitted instance was observed.
+
+This absence from repository evidence surfaces is not evidence that resident-local state does not exist; the callable writes its execution artifacts to the resident state root, not to GitHub source. It is therefore not permissible to infer either success or failure of resident execution from repository absence alone.
+
+The transition chain stops at the first required artifact:
+
+```text
+authentic RERUN_REQUEST_BOUND.json: NOT OBSERVED
+authentic RERUN_REQUEST_SUBMISSION.json: NOT EVALUATED AS TRANSITION EVIDENCE
+same-execution resident-executor result: NOT OBSERVED
+REQUEST_BOUND: NOT CLAIMED
+STEGVERSE_NODE_BOUND_TO_INVOCATION and all downstream transitions: NOT ADVANCED
+```
+
+No SV002-ATTEMPT-001 through -013 path was retried. In particular, no device search, Site path, browser/StegBrowser fallback, GitHub/CI execution, new bridge, new listener, new host, new wrapper, second request, or alternate repository precedent was used.
