@@ -117,3 +117,10 @@ Authentic `REQUEST_BOUND`, principal execution, and same-execution reconstructio
 `resident-runtime/invoke_sv002_experiment_rerun.py` is the machine binding for `STEGVERSE-002-EXPERIMENT-RERUN-001`. It does not implement a new transport or runtime. It binds the frozen `REQUEST_SELF_CHARACTERIZATION` request to the existing organization-kernel carrier/federation publisher and fails closed outside an already-configured shared gateway or same-host federation mesh.
 
 The binding is exactly-once: one deterministic packet is bound to one retained carrier frame, and retries reuse that same frame. GitHub/CI execution is prohibited and cannot establish `REQUEST_BOUND`.
+
+
+## SV002 rerun resident-evidence observation boundary — 2026-09-18
+
+For `STEGVERSE-002-EXPERIMENT-RERUN-001` / COSV `50000000107000`, the callable/executor repair remains source-complete, but runtime progress is not promoted from source state. The rerun binding writes `RERUN_REQUEST_BOUND.json` and `RERUN_REQUEST_SUBMISSION.json` under the resident self-characterization state root, while the resident executor writes `resident-runtime/state/resident-executor.latest.json`.
+
+A bounded reconciliation on 2026-09-18 found no existing experiment-owned authoritative read surface available to this conversation that exposes those resident-local artifacts. Standing-device/remote-device rediscovery was not used because it is prohibited by the experiment attempt map. Repository absence is not interpreted as resident-local absence or execution failure. `REQUEST_BOUND` and every downstream runtime predicate therefore remain unclaimed until the authentic resident bytes are observed and same-execution correlated.

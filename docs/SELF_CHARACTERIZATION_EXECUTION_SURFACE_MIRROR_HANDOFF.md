@@ -398,3 +398,32 @@ STEGVERSE_NODE_BOUND_TO_INVOCATION and all downstream transitions: NOT ADVANCED
 ```
 
 No SV002-ATTEMPT-001 through -013 path was retried. In particular, no device search, Site path, browser/StegBrowser fallback, GitHub/CI execution, new bridge, new listener, new host, new wrapper, second request, or alternate repository precedent was used.
+
+
+## 2026-09-18 authoritative resident-state observation-surface reconciliation
+
+The canonical registry shard, this mirror handoff, and the mandatory attempt-reference map were re-read before further action. The Goal remains `STEGVERSE-002-EXPERIMENT-RERUN-001` / COSV `50000000107000` with coordination state `ACTIVE`.
+
+The requested bounded observation was fingerprinted against the attempt map. A standing-device or remote/external-device search would duplicate `SV002-ATTEMPT-001` / `SV002-ATTEMPT-013` and was not executed. No invocation source, runtime, scheduler, listener, wrapper, bridge, Site path, workflow execution, second request, or alternate device path was introduced.
+
+Current experiment-owned source establishes these resident-local write locations:
+
+```text
+~/.stegverse/self-characterization-001/RERUN_REQUEST_BOUND.json
+~/.stegverse/self-characterization-001/RERUN_REQUEST_SUBMISSION.json
+<repository>/resident-runtime/state/resident-executor.latest.json
+```
+
+The repository's current read/search surfaces expose only source definitions and repository state. No existing experiment-owned authoritative read surface was found that can expose the already-running resident-local files above to this conversation. This is an observation-surface limitation, not evidence that the resident-local artifacts are absent and not evidence that execution failed.
+
+The transition chain therefore remains stopped at the first required runtime artifact:
+
+```text
+authentic resident RERUN_REQUEST_BOUND.json: NOT OBSERVED
+authentic resident RERUN_REQUEST_SUBMISSION.json: NOT EVALUATED AS TRANSITION EVIDENCE
+same-execution resident-executor result: NOT OBSERVED
+REQUEST_BOUND: NOT CLAIMED
+all downstream Experiment transitions: NOT ADVANCED
+```
+
+No field-level packet/frame validation was performed because the authoritative `RERUN_REQUEST_BOUND.json` bytes were not observable. The next admissible action remains observation through an already-existing authoritative resident-state/evidence surface if one becomes available; it must not be replaced by another invocation mechanism or by repository absence.
