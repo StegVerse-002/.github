@@ -464,3 +464,42 @@ downstream transitions: NOT ADVANCED
 ```
 
 This is an unresolved observation boundary only. It is not evidence that the resident-local artifacts are absent and not evidence that resident execution failed.
+
+
+## 2026-09-18 no-new-authoritative-evidence checkpoint
+
+The canonical registry, mirror handoff, and mandatory attempt-reference map were re-read from main `26803c2176cf41e7a1f36841bf1d0e74bc72792d`. The Goal remains `STEGVERSE-002-EXPERIMENT-RERUN-001`, COSV `50000000107000`, coordination state `ACTIVE`, with `REQUEST_BOUND` still the first admissible runtime transition.
+
+This continuation did not repeat prior resident-read discovery. It checked only whether repositories already participating in the established rerun path had changed in a way that could expose a newly evidenced authoritative resident-state surface.
+
+Observed repository heads/current recent state:
+
+```text
+StegVerse-002/.github
+  current main: 26803c2176cf41e7a1f36841bf1d0e74bc72792d
+  newer execution/read-surface commit after this checkpoint: NONE
+
+StegVerse-002/micro-node-runtime
+  current latest commit: 901829b3f36f764b474d7e4be02b68eb5e6e63fe
+  dated: 2026-09-09
+  newer rerun evidence/read-surface change: NONE
+
+StegVerse-Labs/StegOS
+  current latest commit: fd7d2837d9b8f054f2fcf530a3c8264f3231d560
+  dated: 2026-09-18T01:27:19Z
+  this predates the established resident-read observation boundary
+  newer rerun evidence/read-surface change: NONE
+```
+
+Therefore no newly evidenced existing authoritative surface exists to inspect. The previously proven resident-read observation boundary remains controlling.
+
+```text
+authentic RERUN_REQUEST_BOUND.json bytes observed: NO
+authentic RERUN_REQUEST_SUBMISSION.json bytes observed: NO
+same-execution resident-executor result observed: NO
+REQUEST_BOUND: NOT CLAIMED
+downstream transitions: NOT ADVANCED
+runtime absence inferred: NO
+```
+
+No reader, bridge, listener, wrapper, Site path, workflow runtime, device prerequisite, second request, or invocation-source change was introduced.
