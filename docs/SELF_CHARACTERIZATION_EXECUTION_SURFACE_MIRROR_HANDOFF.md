@@ -503,3 +503,63 @@ runtime absence inferred: NO
 ```
 
 No reader, bridge, listener, wrapper, Site path, workflow runtime, device prerequisite, second request, or invocation-source change was introduced.
+
+
+## 2026-09-18 Master Records receipt-tail determination
+
+Master Records receipts and SV002 custody/reconstruction surfaces were reviewed directly across `master-records/orchestration` and `master-records/.github`.
+
+For the current rerun identity:
+
+```text
+Goal Task ID: STEGVERSE-002-EXPERIMENT-RERUN-001
+COSV: 50000000107000
+Experiment: STEGVERSE-002-SELF-CHARACTERIZATION-001
+```
+
+no Master Records record was found for:
+
+```text
+STEGVERSE-002-EXPERIMENT-RERUN-001
+50000000107000
+RERUN_REQUEST_BOUND
+RERUN_REQUEST_SUBMISSION
+SV002-RERUN-*
+current-rerun SV002-RUN-*
+current-rerun Master Records custody intake
+current-rerun reconstruction receipt
+```
+
+The active Master Records intake at `master-records/.github/resident-runtime/sv002_self_characterization_intake.py` accepts only a completed canonical principal artifact set bound to a real `SV002-RUN-*`, then materializes write-once custody and requires deterministic reconstruction PASS. Therefore the current rerun has not entered Master Records intake.
+
+The only existing SV002 receipts/reconstruction references in Master Records are historical/browser-infrastructure or source/test material. They are explicitly non-admissible for the frozen v0.3 resident-principal rerun and cannot be chained into the current Goal/COSV.
+
+Exact tail determination:
+
+```text
+last proven current-rerun state:
+  source-level callable/executor binding exists
+  (not runtime receipt evidence)
+
+first required runtime receipt:
+  RERUN_REQUEST_BOUND.json / REQUEST_BOUND
+
+current Master Records evidence for that receipt:
+  NONE
+
+first concrete failure/observation point:
+  REQUEST_BOUND has not been authentically retained/observed for this rerun
+
+Master Records intake reached:
+  NO
+
+Master Records custody/reconstruction failure:
+  NO — not entered
+
+downstream failure point:
+  NOT EVALUATED
+```
+
+This means the exact failure boundary is upstream of Master Records and upstream of Node/InTr materialization evidence. It is not a Master Records reconstruction defect. The current chain never supplies Master Records with a qualifying rerun artifact set because the very first runtime transition, `REQUEST_BOUND`, is not authentically retained/observable.
+
+Historical browser evidence and the retired `SV002-INTERLOCK-OBSERVATION-20260901-001` remain separate and must not be used to promote the current rerun.

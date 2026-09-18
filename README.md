@@ -138,3 +138,10 @@ No new read endpoint, bridge, listener, wrapper, device dependency, Site path, w
 After the established resident-read observation boundary was merged, the repositories already participating in the rerun path were checked only for newer changes capable of exposing an authoritative resident-state surface. None exists: StegVerse-002/.github remains at the observation-boundary main, micro-node-runtime has no newer rerun change, and current StegOS head predates that boundary.
 
 Accordingly the prior result remains controlling without another discovery sweep. Authentic `RERUN_REQUEST_BOUND.json`, `RERUN_REQUEST_SUBMISSION.json`, and the same-execution resident-executor result remain unobserved; `REQUEST_BOUND` and all downstream transitions remain unclaimed. No runtime absence is inferred.
+
+
+## SV002 Master Records receipt-tail result — 2026-09-18
+
+Direct review of Master Records SV002 receipt/custody surfaces confirms that the current rerun has not reached Master Records at all. There is no current Goal/COSV receipt, no current-rerun `SV002-RUN-*`, no custody intake, and no reconstruction receipt. The Master Records endpoint only accepts the complete canonical principal artifact set after a qualifying run exists.
+
+The exact current-rerun failure/observation boundary is therefore `REQUEST_BOUND`: the source-level callable/executor binding exists, but no authentic `RERUN_REQUEST_BOUND.json` runtime receipt has been retained/observed. Master Records reconstruction is not failing; it has not been entered. Historical browser/infrastructure receipts remain separate and non-admissible for this rerun.
