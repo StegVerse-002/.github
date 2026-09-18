@@ -282,3 +282,58 @@ downstream transitions: NOT ADVANCED
 ```
 
 A GitHub merge of this binding is source repair only. The experiment may advance only when the callable binding runs in its existing resident/federation context and emits the authentic request-bound artifact.
+
+
+## 2026-09-17 exact callable exposure gap
+
+The now-canonical binding `resident-runtime/invoke_sv002_experiment_rerun.py` is source-installed and declared in `resident-runtime/activation-manifest.json`, but the existing resident execution context does not consume that declaration.
+
+Exact field-to-consumer trace:
+
+```text
+activation-manifest.json
+  self_characterization_surface.callable_task_id
+    = STEGVERSE-002-EXPERIMENT-RERUN-001
+  self_characterization_surface.callable_publisher_binding
+    = resident-runtime/invoke_sv002_experiment_rerun.py
+        |
+        |  NO EXISTING DEREFERENCE / INVOCATION
+        v
+resident-runtime/resident_executor.py
+```
+
+Observed current executor behavior:
+
+- `resident_executor.py` does not open or parse `resident-runtime/activation-manifest.json`;
+- it does not inspect `callable_task_id`, `callable_operation`, or `callable_publisher_binding`;
+- its SV002-specific branch is still `consume_sv002_once()`, which references the explicitly excluded stale `resident-runtime/control/sv002-sdk-query.request.json` and `resident-runtime/run_sv002_self_characterization_roundtrip.py`;
+- after that branch it runs only `resident-runtime/federation_cycle.py`;
+- `resident-runtime/systemd/stegverse-002-resident.service` starts only `resident_executor.py --poll-seconds 1`;
+- the only current code path found reading `activation-manifest.json` is `org-kernel/kernel.py::resident_status()`, and that use is status/observation only, not callable execution.
+
+Therefore the exact missing exposure is:
+
+```text
+EXISTING RESIDENT EXECUTION CONTEXT
+  lacks a consumer that dereferences
+  activation-manifest.json:
+    self_characterization_surface.callable_task_id
+    self_characterization_surface.callable_publisher_binding
+  and invokes that already-bound callable when STEGVERSE-002-EXPERIMENT-RERUN-001 is requested.
+```
+
+This continuation made no runtime or source-path repair because the prompt explicitly required identification rather than a new path. No bridge, listener, host, Site path, device search, workflow execution, scheduler, second request, or stale one-shot restoration was introduced.
+
+Evidence state remains:
+
+```text
+callable publisher binding source: PRESENT
+activation-manifest declaration: PRESENT
+resident executor dereference of declaration: ABSENT
+authentic RERUN_REQUEST_BOUND.json: NOT OBSERVED
+authentic RERUN_REQUEST_SUBMISSION.json: NOT OBSERVED
+REQUEST_BOUND: NOT CLAIMED
+downstream transitions: NOT ADVANCED
+```
+
+Any next repair must modify only this missing dereference/exposure inside the already-existing resident execution context. It must not create another invocation mechanism or revive any SV002-ATTEMPT-001 through -013 path.
