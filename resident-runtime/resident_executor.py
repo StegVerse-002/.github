@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Persistent StegVerse organization resident executor.
 
-Continuously runs the canonical federation cycle. On StegVerse-org, it can also
-consume the one-shot frozen SV002 SDK query request exactly once. GitHub Actions
-and other hosted CI environments are rejected as runtime authority.
+Continuously runs the canonical federation cycle and consumes the callable
+self-characterization binding declared by the existing activation manifest.
+GitHub Actions and other hosted CI environments are rejected as runtime
+authority.
 """
 from __future__ import annotations
 import argparse, json, os, subprocess, sys, time
@@ -13,8 +14,10 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 HOSTED=("GITHUB_ACTIONS","CI","RENDER","VERCEL","CF_PAGES","CLOUDFLARE_WORKERS")
 STATE=ROOT/"resident-runtime"/"state"
-SV002_TASK=ROOT/"resident-runtime"/"control"/"sv002-sdk-query.request.json"
-SV002_RECEIPT=STATE/"sv002-sdk-query.execution.latest.json"
+ACTIVATION_MANIFEST=ROOT/"resident-runtime"/"activation-manifest.json"
+EXPECTED_CALLABLE_TASK_ID="STEGVERSE-002-EXPERIMENT-RERUN-001"
+EXPECTED_CALLABLE_OPERATION="REQUEST_SELF_CHARACTERIZATION"
+EXPECTED_CALLABLE_BINDING="resident-runtime/invoke_sv002_experiment_rerun.py"
 HEARTBEAT=STATE/"resident-executor.latest.json"
 
 def truthy(v):
@@ -39,34 +42,52 @@ def run_json(cmd, timeout):
             pass
     return p,payload
 
-def consume_sv002_once():
-    if not SV002_TASK.is_file():
-        return None
-    task=json.loads(SV002_TASK.read_text(encoding="utf-8"))
-    if task.get("state")!="REQUESTED":
-        return None
-    if SV002_RECEIPT.is_file():
-        prior=json.loads(SV002_RECEIPT.read_text(encoding="utf-8"))
-        if prior.get("task_id")==task.get("task_id") and prior.get("terminal") is True:
-            return prior
-    script=ROOT/"resident-runtime"/"run_sv002_self_characterization_roundtrip.py"
-    if not script.is_file():
-        raise RuntimeError("SV002 roundtrip runtime missing")
-    p,result=run_json([sys.executable,str(script),"--authority-ref",task["authority_ref"]],2200)
-    receipt={
-        "schema":"stegverse.resident-one-shot-execution/v1",
-        "task_id":task["task_id"],
-        "attempted_at":datetime.now(timezone.utc).isoformat(),
-        "returncode":p.returncode,
-        "result":result,
-        "stdout_tail":p.stdout[-8192:],
-        "stderr_tail":p.stderr[-8192:],
-        "terminal":bool(p.returncode==0 and isinstance(result,dict)),
-        "github_actions_runtime_authority":"NONE",
-        "authority_effect":"NONE_EXECUTOR_ONLY",
-    }
-    atomic_json(SV002_RECEIPT,receipt)
-    return receipt
+def consume_declared_sv002_callable():
+    if not ACTIVATION_MANIFEST.is_file():
+        raise RuntimeError("activation manifest missing")
+    activation=json.loads(ACTIVATION_MANIFEST.read_text(encoding="utf-8"))
+    surface=activation.get("self_characterization_surface") or {}
+
+    task_id=surface.get("callable_task_id")
+    operation=surface.get("callable_operation")
+    binding_rel=surface.get("callable_publisher_binding")
+    invocation_count=surface.get("callable_invocation_count")
+
+    if task_id!=EXPECTED_CALLABLE_TASK_ID:
+        raise RuntimeError("SV002 callable task binding mismatch")
+    if operation!=EXPECTED_CALLABLE_OPERATION:
+        raise RuntimeError("SV002 callable operation binding mismatch")
+    if binding_rel!=EXPECTED_CALLABLE_BINDING:
+        raise RuntimeError("SV002 callable publisher binding mismatch")
+    if invocation_count!=1:
+        raise RuntimeError("SV002 callable invocation count must equal one")
+
+    binding=(ROOT/binding_rel).resolve()
+    try:
+        binding.relative_to(ROOT.resolve())
+    except ValueError as exc:
+        raise RuntimeError("SV002 callable publisher escapes repository root") from exc
+    if not binding.is_file():
+        raise RuntimeError("SV002 callable publisher binding missing")
+
+    p,result=run_json([sys.executable,str(binding)],2200)
+    if not isinstance(result,dict):
+        raise RuntimeError("SV002 callable publisher emitted no result")
+    if result.get("goal_task_id")!=EXPECTED_CALLABLE_TASK_ID:
+        raise RuntimeError("SV002 callable result task mismatch")
+    if result.get("cosv_id")!="50000000107000":
+        raise RuntimeError("SV002 callable result COSV mismatch")
+    if p.returncode!=0:
+        raise RuntimeError(
+            "SV002 callable publisher failed: "
+            +str(result.get("reason") or p.stderr[-1024:] or "unknown")
+        )
+    if result.get("state") not in {
+        "SUBMITTED_EXISTING_FEDERATION_EDGE",
+        "ALREADY_SUBMITTED_NO_SECOND_REQUEST",
+    }:
+        raise RuntimeError("SV002 callable publisher terminal state invalid")
+    return result
 
 def cycle():
     script=ROOT/"resident-runtime"/"federation_cycle.py"
@@ -84,12 +105,15 @@ def main():
     if bad:
         raise SystemExit("hosted runtime prohibited: "+",".join(bad))
     iteration=0
+    callable_completed=False
+    callable_result=None
     while True:
         iteration+=1
-        sv002=None
         error=None
         try:
-            sv002=consume_sv002_once()
+            if not callable_completed:
+                callable_result=consume_declared_sv002_callable()
+                callable_completed=True
             fed=cycle()
         except Exception as exc:
             fed=None
@@ -101,7 +125,8 @@ def main():
             "iteration":iteration,
             "state":"RUNNING" if error is None else "DEGRADED",
             "federation_cycle":fed,
-            "sv002_one_shot":sv002,
+            "sv002_callable":callable_result,
+            "sv002_callable_completed":callable_completed,
             "error":error,
             "persistent":not a.once,
             "github_actions_runtime_authority":"NONE",
