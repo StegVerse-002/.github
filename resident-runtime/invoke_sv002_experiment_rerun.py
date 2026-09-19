@@ -234,6 +234,8 @@ def _request_bound_evidence() -> dict[str, Any]:
             "request_bound_master_records_reconstruction_status": custody.get("reconstruction_status") if custody else None,
             "request_bound_master_records_required_evidence_validation_status": custody.get("required_evidence_validation_status") if custody else None,
             "request_bound_master_records_required_evidence_count": custody.get("required_evidence_count") if custody else None,
+            "request_bound_master_records_receipt_sha256": custody.get("receipt_sha256") if custody else None,
+            "request_bound_master_records_reconstructed_receipt_sha256": custody.get("reconstructed_receipt_sha256") if custody else None,
             "request_bound_master_record_ref": custody.get("master_record_ref") if custody else None,
             "request_bound_custody_receipt_id": custody.get("custody_receipt_id") if custody else None,
         }
@@ -409,6 +411,8 @@ def invoke_once() -> dict[str, Any]:
             "request_bound_master_records_reconstruction_status": custody["reconstruction_status"],
             "request_bound_master_records_required_evidence_validation_status": custody["required_evidence_validation_status"],
             "request_bound_master_records_required_evidence_count": custody["required_evidence_count"],
+            "request_bound_master_records_receipt_sha256": custody["receipt_sha256"],
+            "request_bound_master_records_reconstructed_receipt_sha256": custody["reconstructed_receipt_sha256"],
             "request_bound_master_record_ref": custody["master_record_ref"],
             "request_bound_custody_receipt_id": custody["custody_receipt_id"],
         }
