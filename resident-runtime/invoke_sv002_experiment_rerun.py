@@ -13,6 +13,7 @@ submission reuses the exact persisted frame; it never mints a second request.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import base64
 import hashlib
 import importlib.util
 import json
@@ -111,8 +112,22 @@ def _custody_request_bound(state_root: Path, bound: dict[str, Any]) -> dict[str,
     receipt_path = state_root / "RERUN_REQUEST_BOUND_MASTER_RECORDS_RECEIPT.json"
     custody_path = state_root / "RERUN_REQUEST_BOUND_MASTER_RECORDS_CUSTODY.json"
     client = _canonical_custody_client()
+    bound_path = state_root / "RERUN_REQUEST_BOUND.json"
+    if not bound_path.is_file():
+        raise RuntimeError("REQUEST_BOUND exact evidence missing before custody")
+    bound_bytes = bound_path.read_bytes()
+    required_evidence_manifest = [{
+        "evidence_id": "SV002_REQUEST_BOUND_EXACT_BYTES",
+        "evidence_type": "stegverse.sv002-rerun-request-bound/v1",
+        "origin_transition_id": "SV002_REQUEST_BOUND",
+        "encoding": "base64",
+        "sha256": hashlib.sha256(bound_bytes).hexdigest(),
+        "content": base64.b64encode(bound_bytes).decode("ascii"),
+    }]
     if receipt_path.is_file():
         receipt = _load(receipt_path)
+        if receipt.get("required_evidence_manifest") != required_evidence_manifest:
+            raise RuntimeError("persisted REQUEST_BOUND custody receipt required-evidence mismatch")
     else:
         receipt = client.build_state_receipt(
             transition_id="SV002_REQUEST_BOUND",
@@ -135,18 +150,28 @@ def _custody_request_bound(state_root: Path, bound: dict[str, Any]) -> dict[str,
                 "manifest_sha256": bound["manifest_sha256"],
                 "frame_sha256": bound["frame_sha256"],
             },
+            required_evidence_manifest=required_evidence_manifest,
         )
         _write_once(receipt_path, receipt)
     result = client.submit_state_receipt(receipt)
-    if result.get("state") != "RECORDED" or result.get("reconstruction_status") != "PASS":
+    if (
+        result.get("state") != "RECORDED"
+        or result.get("reconstruction_status") != "PASS"
+        or result.get("required_evidence_validation_status") != "PASS"
+        or result.get("required_evidence_count") != 1
+    ):
         raise RuntimeError(
-            "canonical Master Records REQUEST_BOUND custody not recorded: "
+            "canonical Master Records REQUEST_BOUND custody/required evidence not recorded: "
             + str(result.get("reason") or result.get("state") or "UNKNOWN")
         )
+    if result.get("receipt_sha256") != result.get("reconstructed_receipt_sha256"):
+        raise RuntimeError("canonical Master Records REQUEST_BOUND receipt reconstruction hash mismatch")
     response = {
         "schema": "stegverse.sv002-request-bound-master-records-custody/v1",
         "state": "RECORDED",
         "reconstruction_status": "PASS",
+        "required_evidence_validation_status": result.get("required_evidence_validation_status"),
+        "required_evidence_count": result.get("required_evidence_count"),
         "packet_id": bound["packet_id"],
         "receipt_sha256": result.get("receipt_sha256"),
         "reconstructed_receipt_sha256": result.get("reconstructed_receipt_sha256"),
@@ -207,6 +232,8 @@ def _request_bound_evidence() -> dict[str, Any]:
             "frame_sha256": bound["frame_sha256"],
             "request_bound_master_records_state": custody.get("state") if custody else None,
             "request_bound_master_records_reconstruction_status": custody.get("reconstruction_status") if custody else None,
+            "request_bound_master_records_required_evidence_validation_status": custody.get("required_evidence_validation_status") if custody else None,
+            "request_bound_master_records_required_evidence_count": custody.get("required_evidence_count") if custody else None,
             "request_bound_master_record_ref": custody.get("master_record_ref") if custody else None,
             "request_bound_custody_receipt_id": custody.get("custody_receipt_id") if custody else None,
         }
@@ -380,6 +407,8 @@ def invoke_once() -> dict[str, Any]:
             "request_bound_state": bound["state"],
             "request_bound_master_records_state": custody["state"],
             "request_bound_master_records_reconstruction_status": custody["reconstruction_status"],
+            "request_bound_master_records_required_evidence_validation_status": custody["required_evidence_validation_status"],
+            "request_bound_master_records_required_evidence_count": custody["required_evidence_count"],
             "request_bound_master_record_ref": custody["master_record_ref"],
             "request_bound_custody_receipt_id": custody["custody_receipt_id"],
         }
