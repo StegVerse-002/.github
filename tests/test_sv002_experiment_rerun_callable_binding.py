@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import importlib.util
 import json
 import os
@@ -146,9 +148,20 @@ class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
                     self.assertEqual(receipt["transition_evidence"]["cosv_id"], "50000000107000")
                     self.assertEqual(receipt["transition_evidence"]["manifest_sha256"], bound["manifest_sha256"])
                     self.assertEqual(receipt["transition_evidence"]["frame_sha256"], bound["frame_sha256"])
+                    required = receipt["required_evidence_manifest"]
+                    self.assertEqual(len(required), 1)
+                    item = required[0]
+                    self.assertEqual(item["evidence_id"], "SV002_REQUEST_BOUND_EXACT_BYTES")
+                    self.assertEqual(item["origin_transition_id"], "SV002_REQUEST_BOUND")
+                    self.assertEqual(item["encoding"], "base64")
+                    exact = base64.b64decode(item["content"])
+                    self.assertEqual(exact, (state / "RERUN_REQUEST_BOUND.json").read_bytes())
+                    self.assertEqual(hashlib.sha256(exact).hexdigest(), item["sha256"])
                     return {
                         "state": "RECORDED",
                         "reconstruction_status": "PASS",
+                        "required_evidence_validation_status": "PASS",
+                        "required_evidence_count": 1,
                         "receipt_sha256": "a" * 64,
                         "reconstructed_receipt_sha256": "a" * 64,
                         "custody_receipt_id": "master-records-state-transition-receipt:test",
@@ -161,6 +174,8 @@ class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
                 result = M._custody_request_bound(state, bound)
             self.assertEqual(result["state"], "RECORDED")
             self.assertEqual(result["reconstruction_status"], "PASS")
+            self.assertEqual(result["required_evidence_validation_status"], "PASS")
+            self.assertEqual(result["required_evidence_count"], 1)
             self.assertTrue((state / "RERUN_REQUEST_BOUND_MASTER_RECORDS_RECEIPT.json").is_file())
             self.assertTrue((state / "RERUN_REQUEST_BOUND_MASTER_RECORDS_CUSTODY.json").is_file())
             self.assertIsNotNone(frame)
