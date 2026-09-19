@@ -161,3 +161,12 @@ Receipt-chain review identified a concrete post-binding evidence defect for `STE
 The ecosystem-wide custody invariant requires every observed governed state transition to emit a canonical state receipt and submit it to Master Records. The rerun callable previously persisted `RERUN_REQUEST_BOUND.json` locally but did not submit that `REQUEST_BOUND` transition through the existing canonical state-transition custody client.
 
 The callable now reuses `StegVerse-Labs/.github/workers/canonical_state_transition_custody.py`, writes the exact canonical REQUEST_BOUND state receipt once, requires Master Records `RECORDED` plus `reconstruction_status=PASS`, retains the returned custody identity, and only then proceeds to the existing federation publication edge. If the canonical custody client or authoritative Master Records surface is unavailable, the rerun fails closed before federation submission. No second request, runtime, scheduler, listener, bridge, Site path, custody store, transition authority, or execution authority is introduced.
+
+
+## SV002 REQUEST_BOUND required-evidence custody refinement — 2026-09-18
+
+The canonical Master Records transition contract now requires every state receipt to declare its required-evidence manifest and requires exact digest validation/reconstruction for every required evidence item before custody PASS. For `SV002_REQUEST_BOUND`, the locally retained `RERUN_REQUEST_BOUND.json` is itself required evidence.
+
+The current rerun callable therefore submits the exact `RERUN_REQUEST_BOUND.json` bytes as one `base64` required-evidence item bound to `origin_transition_id=SV002_REQUEST_BOUND`, requires `required_evidence_validation_status=PASS` and `required_evidence_count=1`, and requires the Master Records canonical receipt hash to equal its reconstructed receipt hash before federation submission can proceed. The callable projects the exact Goal/COSV/experiment/operation/invocation_count/packet/request/manifest/frame tuple and canonical custody hashes on both successful submission and later blocked outcomes.
+
+This remains a refinement of the existing canonical custody path. It does not create a second custody store, transition authority, execution authority, request, runtime, scheduler, dispatcher, or resident executor.
