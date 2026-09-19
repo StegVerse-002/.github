@@ -624,3 +624,12 @@ authentic post-repair resident execution: NOT YET OBSERVED
 REQUEST_BOUND Master Records RECORDED+PASS for the real rerun: NOT YET OBSERVED
 parent REQUEST_BOUND predicate: NOT YET PROMOTED
 ```
+
+
+## SV002 REQUEST_BOUND required-evidence custody refinement — 2026-09-18
+
+The canonical Master Records transition contract now requires every state receipt to declare its required-evidence manifest and requires exact digest validation/reconstruction for every required evidence item before custody PASS. For `SV002_REQUEST_BOUND`, the locally retained `RERUN_REQUEST_BOUND.json` is itself required evidence.
+
+The current rerun callable therefore submits the exact `RERUN_REQUEST_BOUND.json` bytes as one `base64` required-evidence item bound to `origin_transition_id=SV002_REQUEST_BOUND`, requires `required_evidence_validation_status=PASS` and `required_evidence_count=1`, and requires the Master Records canonical receipt hash to equal its reconstructed receipt hash before federation submission can proceed. The callable projects the exact Goal/COSV/experiment/operation/invocation_count/packet/request/manifest/frame tuple and canonical custody hashes on both successful submission and later blocked outcomes.
+
+This remains a refinement of the existing canonical custody path. It does not create a second custody store, transition authority, execution authority, request, runtime, scheduler, dispatcher, or resident executor.
