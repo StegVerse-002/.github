@@ -1,0 +1,82 @@
+{
+  "schema": "stegverse.organization-open-source-inventory/v1",
+  "organization": "StegVerse-002",
+  "snapshot_date": "2026-09-26",
+  "canonical_goal": "ECOSYSTEM-OPEN-SOURCE-STRATEGY-001",
+  "cosv": "20010010100000",
+  "scope": "Nine authenticated repository entries; exact default-branch LICENSE/LICE​NSE.md root-path inspection, with two observed identical MIT root license blobs; no historical/file-level rights inference.",
+  "visibility": "INTERNAL_SOURCE_OWNER_EVIDENCE",
+  "counts": {
+    "repositories": 9,
+    "public": 2,
+    "private": 6,
+    "internal": 1,
+    "mit_root_text_observed": 2,
+    "checked_root_paths_missing": 7,
+    "copyright_title_verified": 0,
+    "release_authorizations": 0
+  },
+  "repositories": [
+    {
+      "repository": "StegVerse-002/StegProfile",
+      "visibility": "private",
+      "root_license_observation": "LICENSE_AND_LICENSE_MD_NOT_FOUND",
+      "root_license_blob_sha": null
+    },
+    {
+      "repository": "StegVerse-002/legacy_core_lite",
+      "visibility": "private",
+      "root_license_observation": "MIT_TEXT_OBSERVED",
+      "root_license_blob_sha": "bd5fbccee313243891f82ac00d300fa75395bb09"
+    },
+    {
+      "repository": "StegVerse-002/micro-node-runtime",
+      "visibility": "private",
+      "root_license_observation": "LICENSE_AND_LICENSE_MD_NOT_FOUND",
+      "root_license_blob_sha": null
+    },
+    {
+      "repository": "StegVerse-002/capability-registry",
+      "visibility": "private",
+      "root_license_observation": "LICENSE_AND_LICENSE_MD_NOT_FOUND",
+      "root_license_blob_sha": null
+    },
+    {
+      "repository": "StegVerse-002/core-lite",
+      "visibility": "public",
+      "root_license_observation": "MIT_TEXT_OBSERVED",
+      "root_license_blob_sha": "bd5fbccee313243891f82ac00d300fa75395bb09"
+    },
+    {
+      "repository": "StegVerse-002/StegGuardian",
+      "visibility": "private",
+      "root_license_observation": "LICENSE_AND_LICENSE_MD_NOT_FOUND",
+      "root_license_blob_sha": null
+    },
+    {
+      "repository": "StegVerse-002/admissibility-gateway",
+      "visibility": "private",
+      "root_license_observation": "LICENSE_AND_LICENSE_MD_NOT_FOUND",
+      "root_license_blob_sha": null
+    },
+    {
+      "repository": "StegVerse-002/.github",
+      "visibility": "internal",
+      "root_license_observation": "LICENSE_AND_LICENSE_MD_NOT_FOUND",
+      "root_license_blob_sha": null
+    },
+    {
+      "repository": "StegVerse-002/stegguardian-wiki",
+      "visibility": "public",
+      "root_license_observation": "LICENSE_AND_LICENSE_MD_NOT_FOUND",
+      "root_license_blob_sha": null
+    }
+  ],
+  "dispositions": [
+    "ROOT_ONLY_LICENSE_SCOPE_PARTIAL",
+    "CONTRIBUTOR_RIGHTS_UNVERIFIED",
+    "THIRD_PARTY_RIGHTS_UNVERIFIED",
+    "RELEASE_NOT_AUTHORIZED"
+  ],
+  "central_disclosure": "AGGREGATE_COUNTS_ONLY_NO_NONPUBLIC_REPOSITORY_NAMES"
+}
