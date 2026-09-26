@@ -170,3 +170,8 @@ The canonical Master Records transition contract now requires every state receip
 The current rerun callable therefore submits the exact `RERUN_REQUEST_BOUND.json` bytes as one `base64` required-evidence item bound to `origin_transition_id=SV002_REQUEST_BOUND`, requires `required_evidence_validation_status=PASS` and `required_evidence_count=1`, and requires the Master Records canonical receipt hash to equal its reconstructed receipt hash before federation submission can proceed. The callable projects the exact Goal/COSV/experiment/operation/invocation_count/packet/request/manifest/frame tuple and canonical custody hashes on both successful submission and later blocked outcomes.
 
 This remains a refinement of the existing canonical custody path. It does not create a second custody store, transition authority, execution authority, request, runtime, scheduler, dispatcher, or resident executor.
+
+
+## 2026-09-26 source-only open-source census
+
+Separate central `ECOSYSTEM-OPEN-SOURCE-STRATEGY-001` / COSV `20010010100000` has an [organization-owned nine-repository inventory](docs/OPEN_SOURCE_ORGANIZATION_INVENTORY_20260926.json). Two source roots contain identical observed MIT text; seven inspected root LICENSE and LICENSE.md paths are not found. This does not license any different Core-Lite repository, verify source/contributor ownership or grant release authority. Central public census uses aggregate-only nonpublic-safe counts; existing organization runtime responsibility remains unchanged.
