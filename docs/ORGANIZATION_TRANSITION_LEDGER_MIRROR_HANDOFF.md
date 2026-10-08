@@ -7,6 +7,6 @@ Repository-level transitions remain owned and replayable in their originating re
 Contract: `.stegverse/transition-ledger/org-contract.json`  
 Rollup: `resident-runtime/aggregate_repo_transition.py`
 
-Organization replay must terminate using verified repo receipts plus this org chain; it must not depend on Master Records ecosystem replay.
+Organization replay must terminate using verified repo receipts plus this org chain; it must not depend on Master Records ecosystem reconstruction.
 
 Only the organization receipt and evidence required for ecosystem reconstruction propagate to `master-records/.github`. Recording creates no authority.

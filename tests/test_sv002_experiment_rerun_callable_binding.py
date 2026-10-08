@@ -121,7 +121,7 @@ class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
         self.assertEqual(result, blocked)
         self.assertTrue(result["request_bound_claimed"])
 
-    def test_request_bound_requires_canonical_master_records_custody(self):
+    def test_request_bound_requires_canonical_master_records_organization_record(self):
         with tempfile.TemporaryDirectory() as td:
             state = Path(td) / "state"
             frame, bound = M._load_or_bind_frame(state)
@@ -177,8 +177,28 @@ class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
             self.assertEqual(result["required_evidence_validation_status"], "PASS")
             self.assertEqual(result["required_evidence_count"], 1)
             self.assertTrue((state / "RERUN_REQUEST_BOUND_MASTER_RECORDS_RECEIPT.json").is_file())
-            self.assertTrue((state / "RERUN_REQUEST_BOUND_MASTER_RECORDS_CUSTODY.json").is_file())
+            self.assertTrue((state / "RERUN_REQUEST_BOUND_MASTER_RECORDS_ORGANIZATION_RECORD.json").is_file())
+            self.assertFalse((state / M.LEGACY_REQUEST_BOUND_ORGANIZATION_RECORD).exists())
+            self.assertEqual(result["schema"], "stegverse.sv002-request-bound-master-records-organization-record/v1")
             self.assertIsNotNone(frame)
+
+    def test_request_bound_evidence_reads_new_and_legacy_organization_record(self):
+        for name in (M.REQUEST_BOUND_ORGANIZATION_RECORD, M.LEGACY_REQUEST_BOUND_ORGANIZATION_RECORD):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as td:
+                state = Path(td) / "state"
+                M._load_or_bind_frame(state)
+                (state / name).write_text(json.dumps({
+                    "state": "RECORDED",
+                    "reconstruction_status": "PASS",
+                    "receipt_sha256": "c" * 64,
+                    "master_record_ref": "master-record:test",
+                }), encoding="utf-8")
+                with patch.dict(os.environ, {"STEGVERSE_SELF_CHAR_STATE_ROOT": str(state)}):
+                    evidence = M._request_bound_evidence()
+                self.assertTrue(evidence["request_bound_claimed"])
+                self.assertEqual(evidence["request_bound_master_records_state"], "RECORDED")
+                self.assertEqual(evidence["request_bound_master_records_reconstruction_status"], "PASS")
+                self.assertEqual(evidence["request_bound_master_record_ref"], "master-record:test")
 
     def test_hosted_execution_fails_closed(self):
         with tempfile.TemporaryDirectory() as td:

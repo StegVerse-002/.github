@@ -31,6 +31,22 @@ class TestSV002PreT0Readiness(unittest.TestCase):
             value=json.loads(p.read_text());value["eligible"]=False;p.write_text(json.dumps(value))
             self.assertFalse(mod.verify_node_evidence(p)["pass"])
 
+    def test_master_records_organization_record_readers_accept_new_and_legacy(self):
+        with tempfile.TemporaryDirectory() as td:
+            state=Path(td)
+            legacy=state/"MASTER_RECORDS_CUSTODY_HANDOFF.json"
+            new=state/"MASTER_RECORDS_ORGANIZATION_RECORD_HANDOFF.json"
+            legacy.write_text("{}")
+            self.assertEqual(mod.master_records_handoff_receipt_path(state),legacy)
+            new.write_text("{}")
+            self.assertEqual(mod.master_records_handoff_receipt_path(state),new)
+        self.assertTrue(mod.master_records_organization_record_established({"master_records_organization_record_established":True}))
+        self.assertTrue(mod.master_records_organization_record_established({"master_records_custody_established":True}))
+        self.assertFalse(mod.master_records_organization_record_established({}))
+        self.assertTrue(mod.master_records_organization_record_only("MASTER_RECORDS_ORGANIZATION_RECORD_ONLY"))
+        self.assertTrue(mod.master_records_organization_record_only("MASTER_RECORDS_CUSTODY_ONLY"))
+        self.assertFalse(mod.master_records_organization_record_only("RUNTIME_OBSERVED"))
+
     def test_receipt_schema_is_non_authorizing(self):
         schema=json.loads((ROOT/"schemas/sv002-pre-t0-readiness.schema.json").read_text())
         self.assertEqual(schema["properties"]["authority_effect"]["const"],"NONE")

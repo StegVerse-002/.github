@@ -59,9 +59,9 @@ Rerun the frozen v0.3 StegVerse-002 self-characterization experiment. Do not red
 - Why: Site exposure is not the experiment and must not be promoted into execution ownership or a mandatory prerequisite absent experiment-local evidence.
 - Duplicate fingerprint: `Need Site page/button/exposure first` without a newly proven experiment-local requirement.
 
-### SV002-ATTEMPT-006 — Downstream Master Records/custody work before invocation
+### SV002-ATTEMPT-006 — Downstream Master Records organization-record/reconstruction work before invocation
 - Date: 2026-09-17
-- Attempt: Shifted effort to Master Records custody/reconstruction and related reconciliation while the experiment invocation itself had not occurred.
+- Attempt: Shifted effort to Master Records organization-record/reconstruction and related reconciliation while the experiment invocation itself had not occurred.
 - Disposition: `DO_NOT_REPEAT_OUT_OF_ORDER`.
 - Why: Custody/reconstruction is downstream evidence. It cannot repair or replace an unexecuted principal invocation.
 - Duplicate fingerprint: Working A1-A4, custody, reconstruction, or endpoint binding before an authentic new execution reaches those transitions.

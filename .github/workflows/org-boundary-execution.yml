@@ -1,7 +1,7 @@
 name: Org Boundary Execution
 on:
   push:
-    paths: ['org-boundary/**','resident-runtime/submit_sv002_self_characterization_to_master_records.py','resident-runtime/evaluate_sv002_pre_t0_readiness.py','resident-runtime/validate_sv002_native_org_execution_envelope.py','resident-runtime/validate_sv002_native_org_execution_envelope_v1_1.py','schemas/sv002-pre-t0-readiness.schema.json','schemas/sv002-native-org-execution-envelope.schema.json','schemas/sv002-native-org-execution-envelope-v1.1.schema.json','tests/test_self_characterization_hierarchical_ledger.py','tests/test_sv002_master_records_custody_handoff.py','tests/test_sv002_pre_t0_readiness.py','tests/test_sv002_native_org_execution_envelope.py','tests/test_sv002_native_org_execution_envelope_v1_1.py','docs/SELF_CHARACTERIZATION_EXECUTION_SURFACE_MIRROR_HANDOFF.md','README.md','.github/workflows/org-boundary-execution.yml']
+    paths: ['org-boundary/**','resident-runtime/submit_sv002_self_characterization_to_master_records.py','resident-runtime/evaluate_sv002_pre_t0_readiness.py','resident-runtime/validate_sv002_native_org_execution_envelope.py','resident-runtime/validate_sv002_native_org_execution_envelope_v1_1.py','schemas/sv002-pre-t0-readiness.schema.json','schemas/sv002-native-org-execution-envelope.schema.json','schemas/sv002-native-org-execution-envelope-v1.1.schema.json','tests/test_self_characterization_hierarchical_ledger.py','tests/test_sv002_master_records_organization_record_handoff.py','tests/test_sv002_pre_t0_readiness.py','tests/test_sv002_native_org_execution_envelope.py','tests/test_sv002_native_org_execution_envelope_v1_1.py','docs/SELF_CHARACTERIZATION_EXECUTION_SURFACE_MIRROR_HANDOFF.md','README.md','.github/workflows/org-boundary-execution.yml']
   pull_request:
     paths: ['org-boundary/**','resident-runtime/evaluate_sv002_pre_t0_readiness.py','resident-runtime/validate_sv002_native_org_execution_envelope.py','resident-runtime/validate_sv002_native_org_execution_envelope_v1_1.py','schemas/sv002-pre-t0-readiness.schema.json','schemas/sv002-native-org-execution-envelope.schema.json','schemas/sv002-native-org-execution-envelope-v1.1.schema.json','tests/test_self_characterization_hierarchical_ledger.py','tests/test_sv002_pre_t0_readiness.py','tests/test_sv002_native_org_execution_envelope.py','tests/test_sv002_native_org_execution_envelope_v1_1.py','docs/SELF_CHARACTERIZATION_EXECUTION_SURFACE_MIRROR_HANDOFF.md','README.md','.github/workflows/org-boundary-execution.yml']
   workflow_dispatch:
@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: python3 org-boundary/tests/test_process_boundary.py
       - run: python3 -m unittest -v tests.test_self_characterization_hierarchical_ledger
-      - run: python3 -m unittest -v tests.test_sv002_master_records_custody_handoff
+      - run: python3 -m unittest -v tests.test_sv002_master_records_organization_record_handoff
       - run: python3 -m unittest -v tests.test_sv002_pre_t0_readiness
       - run: python3 -m unittest -v tests.test_sv002_native_org_execution_envelope
       - run: python3 -m unittest -v tests.test_sv002_native_org_execution_envelope_v1_1

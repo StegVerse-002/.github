@@ -31,6 +31,8 @@ DESTINATION_SERVICE = "stegverse-002.self-characterization"
 ORIGIN_ORG = "StegVerse-org"
 ORIGIN_SERVICE = "stegverse-sdk.external-evaluator"
 INVOCATION_COUNT = 1
+REQUEST_BOUND_ORGANIZATION_RECORD = "RERUN_REQUEST_BOUND_MASTER_RECORDS_ORGANIZATION_RECORD.json"
+LEGACY_REQUEST_BOUND_ORGANIZATION_RECORD = "RERUN_REQUEST_BOUND_MASTER_RECORDS_CUSTODY.json"
 HOSTED = ("GITHUB_ACTIONS", "CI", "RENDER", "VERCEL", "CF_PAGES", "CLOUDFLARE_WORKERS")
 
 K_SPEC = importlib.util.spec_from_file_location("org_kernel", ROOT / "org-kernel" / "kernel.py")
@@ -69,6 +71,13 @@ def _write_once(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _request_bound_organization_record_path(state_root: Path) -> Path | None:
+    for name in (REQUEST_BOUND_ORGANIZATION_RECORD, LEGACY_REQUEST_BOUND_ORGANIZATION_RECORD):
+        if (state_root / name).is_file():
+            return state_root / name
+    return None
+
+
 def _state_root() -> Path:
     raw = os.environ.get(
         "STEGVERSE_SELF_CHAR_STATE_ROOT",
@@ -93,16 +102,16 @@ def _canonical_custody_client() -> Any:
     try:
         roots = json.loads(raw) if raw else {}
     except Exception as exc:
-        raise RuntimeError("canonical Master Records repository roots invalid") from exc
+        raise RuntimeError("canonical Master Records organization-record client repository roots invalid") from exc
     labs_root_raw = str(roots.get("StegVerse-Labs/.github") or "").strip()
     if not labs_root_raw:
-        raise RuntimeError("canonical Master Records custody client unavailable")
+        raise RuntimeError("canonical Master Records organization-record client unavailable")
     client_path = Path(labs_root_raw).expanduser().resolve() / "workers" / "canonical_state_transition_custody.py"
     if not client_path.is_file():
-        raise RuntimeError("canonical Master Records custody client unavailable")
+        raise RuntimeError("canonical Master Records organization-record client unavailable")
     spec = importlib.util.spec_from_file_location("canonical_state_transition_custody", client_path)
     if spec is None or spec.loader is None:
-        raise RuntimeError("canonical Master Records custody client import failed")
+        raise RuntimeError("canonical Master Records organization-record client import failed")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -110,7 +119,7 @@ def _canonical_custody_client() -> Any:
 
 def _custody_request_bound(state_root: Path, bound: dict[str, Any]) -> dict[str, Any]:
     receipt_path = state_root / "RERUN_REQUEST_BOUND_MASTER_RECORDS_RECEIPT.json"
-    custody_path = state_root / "RERUN_REQUEST_BOUND_MASTER_RECORDS_CUSTODY.json"
+    custody_path = state_root / REQUEST_BOUND_ORGANIZATION_RECORD
     client = _canonical_custody_client()
     bound_path = state_root / "RERUN_REQUEST_BOUND.json"
     if not bound_path.is_file():
@@ -161,13 +170,13 @@ def _custody_request_bound(state_root: Path, bound: dict[str, Any]) -> dict[str,
         or result.get("required_evidence_count") != 1
     ):
         raise RuntimeError(
-            "canonical Master Records REQUEST_BOUND custody/required evidence not recorded: "
+            "canonical Master Records REQUEST_BOUND organization record/required evidence not recorded: "
             + str(result.get("reason") or result.get("state") or "UNKNOWN")
         )
     if result.get("receipt_sha256") != result.get("reconstructed_receipt_sha256"):
         raise RuntimeError("canonical Master Records REQUEST_BOUND receipt reconstruction hash mismatch")
     response = {
-        "schema": "stegverse.sv002-request-bound-master-records-custody/v1",
+        "schema": "stegverse.sv002-request-bound-master-records-organization-record/v1",
         "state": "RECORDED",
         "reconstruction_status": "PASS",
         "required_evidence_validation_status": result.get("required_evidence_validation_status"),
@@ -215,8 +224,8 @@ def _request_bound_evidence() -> dict[str, Any]:
             raise RuntimeError("persisted REQUEST_BOUND packet_sha256 mismatch")
         if frame.get("frame_sha256") != bound.get("frame_sha256"):
             raise RuntimeError("persisted REQUEST_BOUND frame_sha256 mismatch")
-        custody_path = _state_root() / "RERUN_REQUEST_BOUND_MASTER_RECORDS_CUSTODY.json"
-        custody = _load(custody_path) if custody_path.is_file() else None
+        custody_path = _request_bound_organization_record_path(_state_root())
+        custody = _load(custody_path) if custody_path is not None else None
         return {
             **base,
             "request_bound_claimed": True,

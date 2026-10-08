@@ -41,7 +41,7 @@ def validate_binding(binding: dict[str, Any], entity_id: str) -> None:
     if principal.get("repository_organization") != org:
         raise RuntimeError("cross-organization principal execution prohibited")
     if binding.get("master_records_required") is not True:
-        raise RuntimeError("Master Records custody/reconstruction must remain required")
+        raise RuntimeError("Master Records organization-record reconstruction must remain required")
 
 def extract_request(envelope: dict[str, Any]) -> dict[str, Any]:
     payload = envelope.get("payload")
