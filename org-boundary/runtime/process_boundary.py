@@ -203,18 +203,21 @@ def main():
             application_result["organization_ledger_root_hash"]=organization_ledger_root["root_hash"]
             if application_result.get("state")=="COMPLETED":
                 handoff_script=ROOT/"resident-runtime/submit_sv002_self_characterization_to_master_records.py"
-                handoff_receipt=state_root/"MASTER_RECORDS_CUSTODY_HANDOFF.json"
+                handoff_receipt=state_root/"MASTER_RECORDS_ORGANIZATION_RECORD_HANDOFF.json"
+                legacy_handoff_receipt=state_root/"MASTER_RECORDS_CUSTODY_HANDOFF.json"
                 if handoff_script.is_file():
                     handoff_done=subprocess.run(
                         ["python3",str(handoff_script),"--state-root",str(state_root)],
                         cwd=ROOT,capture_output=True,text=True,check=False,timeout=120
                     )
                     handoff_value=None
+                    if not handoff_receipt.is_file() and legacy_handoff_receipt.is_file():
+                        handoff_receipt=legacy_handoff_receipt
                     if handoff_receipt.is_file():
                         try: handoff_value=load(handoff_receipt)
                         except Exception: handoff_value=None
                     application_result["master_records_handoff"]={
-                        "state":(handoff_value or {}).get("state") or ("PENDING" if handoff_done.returncode else "PUBLISHED_FOR_MASTER_RECORDS_CUSTODY"),
+                        "state":(handoff_value or {}).get("state") or ("PENDING" if handoff_done.returncode else "PUBLISHED_FOR_MASTER_RECORDS_ORGANIZATION_RECORD"),
                         "receipt_path":str(handoff_receipt) if handoff_receipt.is_file() else None,
                         "receipt":handoff_value,
                         "publisher_returncode":handoff_done.returncode,

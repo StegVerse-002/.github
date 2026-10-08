@@ -72,10 +72,10 @@ StegVerse-org/StegVerse-SDK
 -> stegverse-002.self-characterization
 -> StegVerse-002/micro-node-runtime
 -> StegVerse-002/.github egress
--> Master Records
+-> Master Records organization record/reconstruction
 ```
 
-This supersedes any use of another organization's resident worker as the execution authority for StegVerse-002. External organizations may observe Master Records-derived evidence or validate published receipt schemas, but they do not execute the StegVerse-002 principal.
+This supersedes any use of another organization's resident worker as the execution authority for StegVerse-002. External organizations may observe reconstruction from Master Records organization records or validate published receipt schemas, but they do not execute the StegVerse-002 principal.
 
 
 ## Recursive transition ledger scope — 2026-09-01
@@ -144,4 +144,4 @@ Source readiness does not establish resident execution. The next machine-owned t
 
 ## 2026-09-26 — separate source-owned open-source audit
 
-Central goal `ECOSYSTEM-OPEN-SOURCE-STRATEGY-001` / COSV `20010010100000`; organization source evidence in `docs/OPEN_SOURCE_ORGANIZATION_INVENTORY_20260926.json`. Nine entries (two public, six private, one internal) checked at root LICENSE and LICENSE.md paths: two observed identical MIT root texts, seven checked roots not found. Nonpublic names stay source-owned; central public census aggregates counts only. Legal rights, complete file provenance, third-party dependencies and release approval remain unverified. This does not affect original organization boundary, execution authority, SDK, Master Records or runtime.
+Central goal `ECOSYSTEM-OPEN-SOURCE-STRATEGY-001` / COSV `20010010100000`; organization source evidence in `docs/OPEN_SOURCE_ORGANIZATION_INVENTORY_20260926.json`. Nine entries (two public, six private, one internal) checked at root LICENSE and LICENSE.md paths: two observed identical MIT root texts, seven checked roots not found. Nonpublic names stay source-owned; central public census aggregates counts only. Legal rights, complete file provenance, third-party dependencies and release approval remain unverified. This does not affect original organization boundary, execution authority, SDK, Master Records organization records or runtime.

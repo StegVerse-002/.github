@@ -1,8 +1,8 @@
-# Organization to Master Records Transition Handoff
+# Organization Transition Receipt to Master Records Organization Record Handoff
 
 Organization: `StegVerse-002`
 
-After a repository transition is verified and rolled into the organization ledger, the exact `stegverse.organization-transition-receipt/v1` may be submitted to Master Records through the existing organization federation.
+After a repository transition is verified and rolled into the organization ledger, the exact `stegverse.organization-transition-receipt/v1` may be submitted to Master Records as an organization record through the existing organization federation.
 
 Publisher: `resident-runtime/submit_org_transition_to_master_records.py`
 

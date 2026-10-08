@@ -54,7 +54,7 @@ Implementation revision labels do not supersede or rewrite the frozen v0.3 exper
 Source/implementation readiness is distinct from:
 - resident runtime identity observed;
 - authentic principal execution;
-- Master Records reconstruction/custody;
+- Master Records organization record/reconstruction;
 - public observation readiness;
 - viewer-verifiable fidelity;
 - release/activation.
@@ -66,8 +66,8 @@ Authority effect: NONE.
 
 Implementation v0.8 adds only evidence/custody plumbing outside the frozen principal-visible v0.3 condition:
 - canonical self-characterization artifact-set publication to Master Records;
-- dedicated Master Records custody/reconstruction intake;
-- explicit Master Records custody receipt sourcing for public observation;
+- dedicated Master Records organization-record/reconstruction intake;
+- explicit Master Records organization-record receipt sourcing for public observation;
 - frozen v0.3 contract binding correction in the org execution surface.
 
 No principal-visible input, resource, search behavior, action vocabulary, or stopping condition is changed.

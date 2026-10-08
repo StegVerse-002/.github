@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Publish the canonical SV002 self-characterization artifact set to Master Records.
+"""Publish the canonical SV002 self-characterization artifact set as a Master Records organization record.
 
 This is an organization-local handoff. It does not re-run the principal, grant
-authority, or treat publication as custody acceptance/reconstruction success.
+authority, or treat publication as organization-record acceptance/reconstruction success.
 """
 from __future__ import annotations
 
@@ -12,7 +12,8 @@ from typing import Any
 
 ROOT=Path(__file__).resolve().parents[1]
 EXPERIMENT_ID="STEGVERSE-002-SELF-CHARACTERIZATION-001"
-HANDOFF_RECEIPT="MASTER_RECORDS_CUSTODY_HANDOFF.json"
+HANDOFF_RECEIPT="MASTER_RECORDS_ORGANIZATION_RECORD_HANDOFF.json"
+LEGACY_HANDOFF_RECEIPT="MASTER_RECORDS_CUSTODY_HANDOFF.json"
 REQUIRED=(
     "S0.json",
     "EXPERIMENT_EXECUTION_RECEIPT.json",
@@ -51,7 +52,7 @@ def artifact_bundle(state_root:Path)->tuple[list[dict[str,Any]],str,str]:
     if execution.get("schema")!="stegverse.self-characterization-execution-receipt/v0.3":
         raise RuntimeError("v0.3 execution receipt required")
     if execution.get("state")!="COMPLETED" or execution.get("principal_run_completed") is not True:
-        raise RuntimeError("principal completion required before custody handoff")
+        raise RuntimeError("principal completion required before organization-record handoff")
     run_id=str(execution.get("run_id") or s0.get("run_id") or "")
     if not run_id.startswith("SV002-RUN-"): raise RuntimeError("run_id invalid")
     artifacts=[]
@@ -75,10 +76,11 @@ def main()->int:
     state_root=args.state_root.expanduser().resolve()
     artifacts,artifact_set_sha256,run_id=artifact_bundle(state_root)
     receipt_path=state_root/HANDOFF_RECEIPT
-    if receipt_path.is_file():
-        prior=load(receipt_path)
+    prior_path=next((p for p in (receipt_path,state_root/LEGACY_HANDOFF_RECEIPT) if p.is_file()),None)
+    if prior_path is not None:
+        prior=load(prior_path)
         if prior.get("artifact_set_sha256")!=artifact_set_sha256 or prior.get("run_id")!=run_id:
-            raise SystemExit("master-records-custody-handoff-write-once-collision")
+            raise SystemExit("master-records-organization-record-handoff-write-once-collision")
         print(json.dumps({**prior,"state":"ALREADY_PUBLISHED_NO_REPUBLISH"},sort_keys=True))
         return 0
     org_root=load(state_root/"ORGANIZATION_LEDGER_ROOT.json")
@@ -97,12 +99,12 @@ def main()->int:
         destination_org="master-records",
         destination_service="master-records.sv002-self-characterization-reconstruction",
         payload=payload,
-        transition_reference="sv002.self-characterization.master-records-custody.v1",
+        transition_reference="sv002.self-characterization.master-records-organization-record.v1",
         authority_effect="NONE",
     )
     published=K.publish_packet(packet)
     receipt={
-        "schema":"stegverse.sv002-master-records-custody-handoff/v1",
+        "schema":"stegverse.sv002-master-records-organization-record-handoff/v1",
         "experiment_id":EXPERIMENT_ID,
         "run_id":run_id,
         "artifact_set_sha256":artifact_set_sha256,
@@ -110,7 +112,7 @@ def main()->int:
         "packet_id":packet["packet_id"],
         "frame_sha256":published["frame"]["frame_sha256"],
         "frame_path":published["path"],
-        "state":"PUBLISHED_FOR_MASTER_RECORDS_CUSTODY",
+        "state":"PUBLISHED_FOR_MASTER_RECORDS_ORGANIZATION_RECORD",
         "principal_rerun_required":False,
         "authority_transfer":False,
         "authority_effect":"NONE",

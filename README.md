@@ -12,10 +12,10 @@ external requester
 -> StegVerse-002/.github
 -> StegVerse-002-owned principal
 -> organization egress
--> Master Records custody/reconstruction
+-> Master Records organization record/reconstruction
 ```
 
-A source organization may request self-characterization but may not execute the StegVerse-002 principal. TV/TVC remains credential authority; WorkerCoordinator remains claim/fence authority; InTr/Interlock remains transition authority; Master Records remains observed-reality/custody/reconstruction authority.
+A source organization may request self-characterization but may not execute the StegVerse-002 principal. TV/TVC remains credential authority; WorkerCoordinator remains claim/fence authority; InTr/Interlock remains transition authority; the Organization retains custody and observed reality; Master Records holds organization records and reconstruction.
 
 The historical/resident implementation in `resident-runtime/self_characterization_surface.py` is Python/local-repository coupled. It remains valid historical source but is not an acceptable final implementation when the physical execution requirement is `CURRENT_USER_IPHONE` with no second user-operated machine.
 
@@ -60,7 +60,7 @@ The envelope must carry the exact deterministic `receipt_id`, `evidence_hash`, s
 
 The envelope also binds the frozen objective/knowledge policy, target-org execution ownership, `CURRENT_USER_IPHONE`, `RESIDENT_LOOPBACK_NATIVE_IOS`, the released target model/package identity, the exact materialized frozen-resource-bundle SHA-256, TV/TVC credentials, required WorkerCoordinator/InTr admission, and required Master Records reconstruction.
 
-It fails closed on target-ingress-receipt drift, request/task substitution, ownership drift, frozen-contract drift, reference-model substitution, hosted or second-machine fallback, runtime network resource fetch, non-TV/TVC credentials, GitHub runtime authority, disabled Master Records requirements, or authority transfer. The envelope has `authority_effect=NONE_EXECUTION_REQUEST_ONLY`; its existence alone grants no execution authority.
+It fails closed on target-ingress-receipt drift, request/task substitution, ownership drift, frozen-contract drift, reference-model substitution, hosted or second-machine fallback, runtime network resource fetch, non-TV/TVC credentials, GitHub runtime authority, disabled Master Records reconstruction requirements, or authority transfer. The envelope has `authority_effect=NONE_EXECUTION_REQUEST_ONLY`; its existence alone grants no execution authority.
 
 The real frozen resource-bundle SHA-256 is intentionally not predeclared in source because the real bundle bytes have not yet been materialized. A consumable v1.1 envelope can only be finalized after those exact bytes exist and are hash-bound.
 
@@ -68,7 +68,7 @@ Source/schema/test success does not prove WorkerCoordinator checkout, delivery t
 
 ## Universal action-transition evidence invariant
 
-Every StegVerse action is canonically complete only when every required governed state transition is authentically emitted, retained, same-execution correlated, and reconstructable through canonical Master Records custody. This is an ecosystem-wide invariant, not a special condition of the StegVerse-002 experiment.
+Every StegVerse action is canonically complete only when every required governed state transition is authentically emitted, retained by the Organization, same-execution correlated, and reconstructable from canonical Master Records organization records. This is an ecosystem-wide invariant, not a special condition of the StegVerse-002 experiment.
 
 For the frozen v0.3 rerun, the current successor coordination task is `SHWP-SV002-ACTION-TRANSITION-EVIDENCE-001` under COSV `50000000107000`. It reuses the already-validated event-ephemeral path:
 
@@ -83,7 +83,7 @@ registered StegVerseNode
 -> authentic governed ingress
 -> frozen v0.3 execution
 -> governed egress
--> Master Records custody/reconstruction
+-> Master Records organization record/reconstruction
 ```
 
 Zero connected devices is not a runtime blocker for this path. No standing runtime, external host, second request, second scheduler, second WorkerCoordinator, alternate credential path, or second user-operated device may be introduced merely to make the rerun executable.
@@ -142,7 +142,7 @@ Accordingly the prior result remains controlling without another discovery sweep
 
 ## SV002 Master Records receipt-tail result — 2026-09-18
 
-Direct review of Master Records SV002 receipt/custody surfaces confirms that the current rerun has not reached Master Records at all. There is no current Goal/COSV receipt, no current-rerun `SV002-RUN-*`, no custody intake, and no reconstruction receipt. The Master Records endpoint only accepts the complete canonical principal artifact set after a qualifying run exists.
+Direct review of Master Records SV002 organization-record/reconstruction surfaces confirms that the current rerun has not reached Master Records at all. There is no current Goal/COSV receipt, no current-rerun `SV002-RUN-*`, no organization-record intake, and no reconstruction receipt. The Master Records organization-record endpoint only accepts the complete canonical principal artifact set after a qualifying run exists.
 
 The exact current-rerun failure/observation boundary is therefore `REQUEST_BOUND`: the source-level callable/executor binding exists, but no authentic `RERUN_REQUEST_BOUND.json` runtime receipt has been retained/observed. Master Records reconstruction is not failing; it has not been entered. Historical browser/infrastructure receipts remain separate and non-admissible for this rerun.
 
@@ -154,20 +154,20 @@ The existing rerun callable writes `RERUN_REQUEST_BOUND.json` before federation 
 The bounded repair preserves validated request-bound identity in the existing callable result and existing `resident-executor.latest.json` heartbeat without creating another request, runtime, transport, listener, scheduler, reader, Site path, device prerequisite, or authority surface. Authentic runtime evidence is still required before `REQUEST_BOUND` can be promoted.
 
 
-## SV002 REQUEST_BOUND canonical Master Records custody — 2026-09-18
+## SV002 REQUEST_BOUND canonical Master Records organization record — 2026-09-18
 
-Receipt-chain review identified a concrete post-binding evidence defect for `STEGVERSE-002-EXPERIMENT-RERUN-001`. The deterministic rerun packet is `SV002-RERUN-C796D0BFD181CEC5D99E4C23` with manifest SHA-256 `29222a589eb4c2958d2787743e266f067ee07e1373c51f60b553f1f359789828`. Neither identity appears in canonical Master Records custody.
+Receipt-chain review identified a concrete post-binding evidence defect for `STEGVERSE-002-EXPERIMENT-RERUN-001`. The deterministic rerun packet is `SV002-RERUN-C796D0BFD181CEC5D99E4C23` with manifest SHA-256 `29222a589eb4c2958d2787743e266f067ee07e1373c51f60b553f1f359789828`. Neither identity appears in canonical Master Records organization records.
 
-The ecosystem-wide custody invariant requires every observed governed state transition to emit a canonical state receipt and submit it to Master Records. The rerun callable previously persisted `RERUN_REQUEST_BOUND.json` locally but did not submit that `REQUEST_BOUND` transition through the existing canonical state-transition custody client.
+The ecosystem-wide invariant requires every observed governed state transition to emit a canonical state receipt, retained by the Organization, and submit it to Master Records as an organization record. The rerun callable previously persisted `RERUN_REQUEST_BOUND.json` locally but did not submit that `REQUEST_BOUND` transition through the existing canonical state-transition custody client.
 
-The callable now reuses `StegVerse-Labs/.github/workers/canonical_state_transition_custody.py`, writes the exact canonical REQUEST_BOUND state receipt once, requires Master Records `RECORDED` plus `reconstruction_status=PASS`, retains the returned custody identity, and only then proceeds to the existing federation publication edge. If the canonical custody client or authoritative Master Records surface is unavailable, the rerun fails closed before federation submission. No second request, runtime, scheduler, listener, bridge, Site path, custody store, transition authority, or execution authority is introduced.
+The callable now reuses `StegVerse-Labs/.github/workers/canonical_state_transition_custody.py`, writes the exact canonical REQUEST_BOUND state receipt once, requires the Master Records organization record `RECORDED` plus `reconstruction_status=PASS`, retains the returned organization-record identity, and only then proceeds to the existing federation publication edge. If the canonical client or the Master Records organization-record surface is unavailable, the rerun fails closed before federation submission. No second request, runtime, scheduler, listener, bridge, Site path, custody store, transition authority, or execution authority is introduced.
 
 
 ## SV002 REQUEST_BOUND required-evidence custody refinement — 2026-09-18
 
-The canonical Master Records transition contract now requires every state receipt to declare its required-evidence manifest and requires exact digest validation/reconstruction for every required evidence item before custody PASS. For `SV002_REQUEST_BOUND`, the locally retained `RERUN_REQUEST_BOUND.json` is itself required evidence.
+The canonical Master Records organization-record contract now requires every state receipt to declare its required-evidence manifest and requires exact digest validation/reconstruction for every required evidence item before organization-record PASS. For `SV002_REQUEST_BOUND`, the locally retained `RERUN_REQUEST_BOUND.json` is itself required evidence.
 
-The current rerun callable therefore submits the exact `RERUN_REQUEST_BOUND.json` bytes as one `base64` required-evidence item bound to `origin_transition_id=SV002_REQUEST_BOUND`, requires `required_evidence_validation_status=PASS` and `required_evidence_count=1`, and requires the Master Records canonical receipt hash to equal its reconstructed receipt hash before federation submission can proceed. The callable projects the exact Goal/COSV/experiment/operation/invocation_count/packet/request/manifest/frame tuple and canonical custody hashes on both successful submission and later blocked outcomes.
+The current rerun callable therefore submits the exact `RERUN_REQUEST_BOUND.json` bytes as one `base64` required-evidence item bound to `origin_transition_id=SV002_REQUEST_BOUND`, requires `required_evidence_validation_status=PASS` and `required_evidence_count=1`, and requires the Master Records organization-record receipt hash to equal its reconstructed receipt hash before federation submission can proceed. The callable projects the exact Goal/COSV/experiment/operation/invocation_count/packet/request/manifest/frame tuple and canonical custody hashes on both successful submission and later blocked outcomes.
 
 This remains a refinement of the existing canonical custody path. It does not create a second custody store, transition authority, execution authority, request, runtime, scheduler, dispatcher, or resident executor.
 

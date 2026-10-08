@@ -15,6 +15,9 @@ from typing import Any
 EXPERIMENT_ID="STEGVERSE-002-SELF-CHARACTERIZATION-001"
 IMPLEMENTATION_VERSION="v0.9"
 HOSTED_GUARDS=("GITHUB_ACTIONS","CI","RENDER","VERCEL","CF_PAGES","CLOUDFLARE_WORKERS")
+LEGACY_MASTER_RECORDS_HANDOFF_RECEIPT="MASTER_RECORDS_CUSTODY_HANDOFF.json"
+LEGACY_MASTER_RECORDS_RECORD_ESTABLISHED_FIELD="master_records_custody_established"
+LEGACY_MASTER_RECORDS_OBSERVATION_SOURCE="MASTER_RECORDS_CUSTODY_ONLY"
 FROZEN_SHA256={
  "experiments/self-characterization-001/EXPERIMENT_CONTRACT.v0.3.json":"b9b4745ec98417ae161930ff1cc39cadb90976b0cead29b1c53220fa9b2836a6",
  "experiments/self-characterization-001/EXPERIMENT_MANIFEST.v0.3.json":"15e78f576587450f5031e344f802bc233f5b57e7a1e391969578b8965b6b5678",
@@ -45,6 +48,16 @@ def import_file(name:str,path:Path):
 
 def run(cmd:list[str],cwd:Path,env:dict[str,str]|None=None)->subprocess.CompletedProcess[str]:
     return subprocess.run(cmd,cwd=cwd,env=env,text=True,capture_output=True,check=False,timeout=180)
+
+def master_records_handoff_receipt_path(state:Path)->Path:
+    path=state/"MASTER_RECORDS_ORGANIZATION_RECORD_HANDOFF.json"
+    return path if path.is_file() else state/LEGACY_MASTER_RECORDS_HANDOFF_RECEIPT
+
+def master_records_organization_record_established(app:dict[str,Any])->bool:
+    return app.get("master_records_organization_record_established",app.get(LEGACY_MASTER_RECORDS_RECORD_ESTABLISHED_FIELD)) is True
+
+def master_records_organization_record_only(source:Any)->bool:
+    return source in ("MASTER_RECORDS_ORGANIZATION_RECORD_ONLY",LEGACY_MASTER_RECORDS_OBSERVATION_SOURCE)
 
 def require_clean_principal_state(state_root:Path)->dict[str,Any]:
     blockers=[]
@@ -93,8 +106,8 @@ def synthetic_rehearsal(roots:dict[str,Path])->dict[str,Any]:
         mesh=tmp/"mesh";env=dict(os.environ);env["STEGVERSE_ORG_FEDERATION_ROOT"]=str(mesh)
         publisher=roots["org"]/"resident-runtime/submit_sv002_self_characterization_to_master_records.py"
         first=run(["python3",str(publisher),"--state-root",str(state)],roots["org"],env)
-        if first.returncode: raise RuntimeError("custody publisher failed:"+first.stderr[-600:])
-        handoff=load_json(state/"MASTER_RECORDS_CUSTODY_HANDOFF.json")
+        if first.returncode: raise RuntimeError("organization-record publisher failed:"+first.stderr[-600:])
+        handoff=load_json(master_records_handoff_receipt_path(state))
         second=run(["python3",str(publisher),"--state-root",str(state)],roots["org"],env)
         frames=sorted((mesh/"frames.d").glob("*.json"))
         checks["exactly_once_publication"]={
@@ -111,8 +124,8 @@ def synthetic_rehearsal(roots:dict[str,Path])->dict[str,Any]:
         done=run(["python3",str(boundary),"--envelope",str(packet_path),"--out",str(out)],roots["master"],mr_env)
         mr=load_json(out) if out.exists() else {};app=mr.get("application_result") or {}
         receipt=Path(str(app.get("reconstruction_receipt_path") or ""))
-        checks["master_records_custody_reconstruction"]={
-          "pass":done.returncode==0 and mr.get("consumed") is True and app.get("state")=="RECORDED_AND_RECONSTRUCTED" and app.get("master_records_custody_established") is True and receipt.is_file() and (app.get("reconstruction_receipt") or {}).get("status")=="PASS",
+        checks["master_records_organization_record_reconstruction"]={
+          "pass":done.returncode==0 and mr.get("consumed") is True and app.get("state")=="RECORDED_AND_RECONSTRUCTED" and master_records_organization_record_established(app) and receipt.is_file() and (app.get("reconstruction_receipt") or {}).get("status")=="PASS",
           "state":app.get("state"),
         }
         prior=os.environ.get("STEGVERSE_SV002_MASTER_RECORDS_RECONSTRUCTION_RECEIPT")
@@ -124,8 +137,8 @@ def synthetic_rehearsal(roots:dict[str,Path])->dict[str,Any]:
         finally:
             if prior is None: os.environ.pop("STEGVERSE_SV002_MASTER_RECORDS_RECONSTRUCTION_RECEIPT",None)
             else: os.environ["STEGVERSE_SV002_MASTER_RECORDS_RECONSTRUCTION_RECEIPT"]=prior
-        checks["custody_only_projection"]={
-          "pass":missing.get("state",{}).get("master_records_reconstruction")=="NOT_OBSERVED" and projected.get("observation_source")=="MASTER_RECORDS_CUSTODY_ONLY" and projected.get("state",{}).get("master_records_reconstruction")=="PASS" and bool(projected.get("artifacts",{}).get("ordered_transition_receipts")),
+        checks["organization_record_only_projection"]={
+          "pass":missing.get("state",{}).get("master_records_reconstruction")=="NOT_OBSERVED" and master_records_organization_record_only(projected.get("observation_source")) and projected.get("state",{}).get("master_records_reconstruction")=="PASS" and bool(projected.get("artifacts",{}).get("ordered_transition_receipts")),
           "observation_source":projected.get("observation_source"),
         }
         monroot=tmp/"monitor";(monroot/"receipts").mkdir(parents=True)

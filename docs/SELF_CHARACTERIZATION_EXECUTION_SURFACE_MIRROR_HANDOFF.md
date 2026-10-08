@@ -50,7 +50,7 @@ registered StegVerseNode
 -> StegVerse-002/micro-node-runtime/tools/run_self_characterization_principal.py
 -> frozen v0.3 principal
 -> StegVerse-002/.github egress
--> Master Records custody/reconstruction
+-> Master Records organization record/reconstruction
 ```
 
 - execution owner = `StegVerse-002/.github`;
@@ -58,7 +58,8 @@ registered StegVerseNode
 - WorkerCoordinator = claim/fence authority;
 - Interlock/InTr = governed transition authority;
 - TV/TVC = credential/provider authority;
-- Master Records = observed-reality custody/reconstruction authority;
+- the Organization = observed-reality custody and evidence retention;
+- Master Records = organization records and reconstruction;
 - HeartBeat = timing/freshness/liveness/observability only;
 - GitHub/CI/source runtime authority = `NONE`;
 - second user-operated device required = `false`;
@@ -88,7 +89,7 @@ REGISTERED_STEGVERSE_NODE
 -> STEGVERSE_002_ORG_SELF_CHARACTERIZATION_SURFACE
 -> FROZEN_V0_3_PRINCIPAL_EXECUTION
 -> GOVERNED_EGRESS
--> MASTER_RECORDS_CUSTODY_RECONSTRUCTION
+-> MASTER_RECORDS_ORGANIZATION_RECORD_RECONSTRUCTION
 ```
 
 ## Required transition evidence
@@ -106,7 +107,7 @@ CURRENT_WORKERCOORDINATOR_CLAIM_FENCE_OBSERVED
 AUTHENTIC_INTR_INGRESS_OBSERVED
 PRINCIPAL_EXECUTION_TRANSITIONS_RETAINED
 EGRESS_EMITTED
-MASTER_RECORDS_CUSTODY_OBSERVED
+MASTER_RECORDS_ORGANIZATION_RECORD_OBSERVED
 MASTER_RECORDS_RECONSTRUCTION_PASS
 ALL_REQUIRED_ACTION_TRANSITIONS_RECONSTRUCTABLE
 ```
@@ -170,7 +171,7 @@ None.
 
 ## 2026-09-17 canonical rerun reconciliation
 
-The current Goal Task for the original frozen v0.3 rerun is `STEGVERSE-002-EXPERIMENT-RERUN-001` under COSV `50000000107000`, registered through StegVerse-Labs/.github issue #2070 / PR #2071. This task resumes only the original `STEGVERSE-002-SELF-CHARACTERIZATION-001` execution objective through the already-established registered StegVerseNode -> Interlock -> Universal InTr -> bounded invocation lease -> EVENT_EPHEMERAL -> organization-local self-characterization surface -> v0.3 principal -> governed egress/return -> Master Records custody/reconstruction -> origin-return sequence.
+The current Goal Task for the original frozen v0.3 rerun is `STEGVERSE-002-EXPERIMENT-RERUN-001` under COSV `50000000107000`, registered through StegVerse-Labs/.github issue #2070 / PR #2071. This task resumes only the original `STEGVERSE-002-SELF-CHARACTERIZATION-001` execution objective through the already-established registered StegVerseNode -> Interlock -> Universal InTr -> bounded invocation lease -> EVENT_EPHEMERAL -> organization-local self-characterization surface -> v0.3 principal -> governed egress/return -> Master Records organization record/reconstruction -> origin-return sequence.
 
 `SHWP-SV002-FROZEN-CORPUS-MATERIALIZATION-001` remains adjacent historical/decomposed work and is explicitly not a prerequisite for this rerun. No stricter corpus-completeness gate, Healer dependency, scheduler, runtime, host, alternate authority path, or second user-operated device is added.
 
@@ -507,7 +508,7 @@ No reader, bridge, listener, wrapper, Site path, workflow runtime, device prereq
 
 ## 2026-09-18 Master Records receipt-tail determination
 
-Master Records receipts and SV002 custody/reconstruction surfaces were reviewed directly across `master-records/orchestration` and `master-records/.github`.
+Master Records receipts and SV002 organization-record/reconstruction surfaces were reviewed directly across `master-records/orchestration` and `master-records/.github`.
 
 For the current rerun identity:
 
@@ -526,11 +527,11 @@ RERUN_REQUEST_BOUND
 RERUN_REQUEST_SUBMISSION
 SV002-RERUN-*
 current-rerun SV002-RUN-*
-current-rerun Master Records custody intake
+current-rerun Master Records organization-record intake
 current-rerun reconstruction receipt
 ```
 
-The active Master Records intake at `master-records/.github/resident-runtime/sv002_self_characterization_intake.py` accepts only a completed canonical principal artifact set bound to a real `SV002-RUN-*`, then materializes write-once custody and requires deterministic reconstruction PASS. Therefore the current rerun has not entered Master Records intake.
+The active Master Records intake at `master-records/.github/resident-runtime/sv002_self_characterization_intake.py` accepts only a completed canonical principal artifact set bound to a real `SV002-RUN-*`, then materializes a write-once organization record and requires deterministic reconstruction PASS. Therefore the current rerun has not entered Master Records intake.
 
 The only existing SV002 receipts/reconstruction references in Master Records are historical/browser-infrastructure or source/test material. They are explicitly non-admissible for the frozen v0.3 resident-principal rerun and cannot be chained into the current Goal/COSV.
 
@@ -544,7 +545,7 @@ last proven current-rerun state:
 first required runtime receipt:
   RERUN_REQUEST_BOUND.json / REQUEST_BOUND
 
-current Master Records evidence for that receipt:
+current Master Records organization record for that receipt:
   NONE
 
 first concrete failure/observation point:
@@ -553,7 +554,7 @@ first concrete failure/observation point:
 Master Records intake reached:
   NO
 
-Master Records custody/reconstruction failure:
+Master Records organization-record/reconstruction failure:
   NO — not entered
 
 downstream failure point:
@@ -595,22 +596,22 @@ Promotion remains gated by authentic resident evidence showing the exact validat
 
 ## 2026-09-18 canonical REQUEST_BOUND custody repair
 
-Direct Master Records tracing was extended beyond the SV002 full-artifact intake. The current deterministic rerun identity is:
+Direct tracing of Master Records organization records was extended beyond the SV002 full-artifact intake. The current deterministic rerun identity is:
 
 ```text
 packet_id: SV002-RERUN-C796D0BFD181CEC5D99E4C23
 manifest_sha256: 29222a589eb4c2958d2787743e266f067ee07e1373c51f60b553f1f359789828
 ```
 
-Neither identity is retained in `master-records/orchestration` or `master-records/.github`, including the canonical per-state-transition custody surfaces.
+Neither identity is retained in `master-records/orchestration` or `master-records/.github`, including the canonical per-state-transition organization-record surfaces.
 
-That review exposed the actual missing seam: the current callable emits a local `RERUN_REQUEST_BOUND.json`, but current source does not emit/submit a canonical state-transition receipt for `REQUEST_BOUND` to the existing Master Records custody authority, despite the canonical ecosystem invariant requiring every observed governed state transition to be custodied and reconstructed there.
+That review exposed the actual missing seam: the current callable emits a local `RERUN_REQUEST_BOUND.json`, but current source does not emit/submit a canonical state-transition receipt for `REQUEST_BOUND` to the existing Master Records organization-record surface, despite the canonical ecosystem invariant requiring every observed governed state transition to be retained by the Organization and recorded and reconstructed in Master Records.
 
 The bounded repair therefore reuses the existing canonical client at `StegVerse-Labs/.github/workers/canonical_state_transition_custody.py`. After the immutable request/frame is bound, the callable:
 
 1. emits one `stegverse.canonical-state-transition-receipt/v1` for `SV002_REQUEST_BOUND`;
 2. binds Goal/COSV/experiment/operation/invocation_count/packet/request/manifest/frame evidence;
-3. submits it to the existing canonical Master Records state-transition custody surface;
+3. submits it to the existing canonical Master Records state-transition organization-record surface;
 4. requires `state=RECORDED` and `reconstruction_status=PASS`;
 5. retains the returned custody/master-record identity locally;
 6. proceeds to federation publication only after that exact custody/reconstruction return.
@@ -628,8 +629,8 @@ parent REQUEST_BOUND predicate: NOT YET PROMOTED
 
 ## SV002 REQUEST_BOUND required-evidence custody refinement — 2026-09-18
 
-The canonical Master Records transition contract now requires every state receipt to declare its required-evidence manifest and requires exact digest validation/reconstruction for every required evidence item before custody PASS. For `SV002_REQUEST_BOUND`, the locally retained `RERUN_REQUEST_BOUND.json` is itself required evidence.
+The canonical Master Records organization-record contract now requires every state receipt to declare its required-evidence manifest and requires exact digest validation/reconstruction for every required evidence item before organization-record PASS. For `SV002_REQUEST_BOUND`, the locally retained `RERUN_REQUEST_BOUND.json` is itself required evidence.
 
-The current rerun callable therefore submits the exact `RERUN_REQUEST_BOUND.json` bytes as one `base64` required-evidence item bound to `origin_transition_id=SV002_REQUEST_BOUND`, requires `required_evidence_validation_status=PASS` and `required_evidence_count=1`, and requires the Master Records canonical receipt hash to equal its reconstructed receipt hash before federation submission can proceed. The callable projects the exact Goal/COSV/experiment/operation/invocation_count/packet/request/manifest/frame tuple and canonical custody hashes on both successful submission and later blocked outcomes.
+The current rerun callable therefore submits the exact `RERUN_REQUEST_BOUND.json` bytes as one `base64` required-evidence item bound to `origin_transition_id=SV002_REQUEST_BOUND`, requires `required_evidence_validation_status=PASS` and `required_evidence_count=1`, and requires the Master Records organization-record receipt hash to equal its reconstructed receipt hash before federation submission can proceed. The callable projects the exact Goal/COSV/experiment/operation/invocation_count/packet/request/manifest/frame tuple and canonical custody hashes on both successful submission and later blocked outcomes.
 
 This remains a refinement of the existing canonical custody path. It does not create a second custody store, transition authority, execution authority, request, runtime, scheduler, dispatcher, or resident executor.

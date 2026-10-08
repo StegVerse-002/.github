@@ -13,7 +13,41 @@ REQUIRED=(
     "REPOSITORY_LEDGER_ROOT.json","ORGANIZATION_LEDGER_ROOT.json",
 )
 
-class TestSV002MasterRecordsCustodyHandoff(unittest.TestCase):
+class TestSV002MasterRecordsOrganizationRecordHandoff(unittest.TestCase):
+    def _materialize(self,state:Path)->str:
+        run_id="SV002-RUN-"+"a"*32
+        for name in REQUIRED:
+            p=state/name
+            if name=="S0.json":
+                value={"experiment_id":"STEGVERSE-002-SELF-CHARACTERIZATION-001","run_id":run_id}
+                p.write_text(json.dumps(value),encoding="utf-8")
+            elif name=="EXPERIMENT_EXECUTION_RECEIPT.json":
+                value={"schema":"stegverse.self-characterization-execution-receipt/v0.3","experiment_id":"STEGVERSE-002-SELF-CHARACTERIZATION-001","run_id":run_id,"state":"COMPLETED","principal_run_completed":True}
+                p.write_text(json.dumps(value),encoding="utf-8")
+            elif name=="ORGANIZATION_LEDGER_ROOT.json":
+                p.write_text(json.dumps({"root_hash":"b"*64}),encoding="utf-8")
+            elif name.endswith(".jsonl"):
+                p.write_text("{}\n",encoding="utf-8")
+            else:
+                p.write_text("{}\n" if name.endswith(".json") else "result\n",encoding="utf-8")
+        return run_id
+
+    def test_legacy_handoff_receipt_prevents_republish(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td); state=root/"state"; state.mkdir(); mesh=root/"mesh"
+            self._materialize(state)
+            env=dict(os.environ);env["STEGVERSE_ORG_FEDERATION_ROOT"]=str(mesh)
+            first=subprocess.run(["python3",str(SCRIPT),"--state-root",str(state)],cwd=ROOT,env=env,capture_output=True,text=True,check=False)
+            self.assertEqual(first.returncode,0,first.stderr)
+            new=state/"MASTER_RECORDS_ORGANIZATION_RECORD_HANDOFF.json"
+            legacy=state/"MASTER_RECORDS_CUSTODY_HANDOFF.json"
+            new.rename(legacy)
+            second=subprocess.run(["python3",str(SCRIPT),"--state-root",str(state)],cwd=ROOT,env=env,capture_output=True,text=True,check=False)
+            self.assertEqual(second.returncode,0,second.stderr)
+            self.assertEqual(json.loads(second.stdout)["state"],"ALREADY_PUBLISHED_NO_REPUBLISH")
+            self.assertFalse(new.exists())
+            self.assertEqual(len(list((mesh/"frames.d").glob("*.json"))),1)
+
     def test_publishes_once_without_rerunning_principal(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td); state=root/"state"; state.mkdir(); mesh=root/"mesh"
@@ -35,8 +69,10 @@ class TestSV002MasterRecordsCustodyHandoff(unittest.TestCase):
             env=dict(os.environ);env["STEGVERSE_ORG_FEDERATION_ROOT"]=str(mesh)
             first=subprocess.run(["python3",str(SCRIPT),"--state-root",str(state)],cwd=ROOT,env=env,capture_output=True,text=True,check=False)
             self.assertEqual(first.returncode,0,first.stderr)
-            receipt=json.loads((state/"MASTER_RECORDS_CUSTODY_HANDOFF.json").read_text())
-            self.assertEqual(receipt["state"],"PUBLISHED_FOR_MASTER_RECORDS_CUSTODY")
+            receipt=json.loads((state/"MASTER_RECORDS_ORGANIZATION_RECORD_HANDOFF.json").read_text())
+            self.assertFalse((state/"MASTER_RECORDS_CUSTODY_HANDOFF.json").exists())
+            self.assertEqual(receipt["state"],"PUBLISHED_FOR_MASTER_RECORDS_ORGANIZATION_RECORD")
+            self.assertEqual(receipt["schema"],"stegverse.sv002-master-records-organization-record-handoff/v1")
             self.assertFalse(receipt["principal_rerun_required"])
             frames=list((mesh/"frames.d").glob("*.json"))
             self.assertEqual(len(frames),1)
