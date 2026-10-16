@@ -132,8 +132,15 @@ answer, and close `ALLOW` when the fabricated far side answers.
 `org-runtime/runtime_boundary.py validate` includes `capability_addresses_resolve`,
 `peer_capability_addresses_derive`, and `intr_egress_binding_present`.
 
-Both ledger roots in the unittest and in CI are redirected. The mesh is a
-temporary directory.
+Both ledger roots in the unittest and in the capability-validation workflow
+are redirected. The mesh is a temporary directory. Those runs are not
+authentic production receipts.
+
+`organization-ledger-transition.yml` is separate. A `workflow_dispatch` run
+calls `diagnostic_self_closure`, which appends the repository and organization
+receipts, including `communication_id`, to `refs/stegverse/organization-ledger`
+and reads them back from a fresh fetch. That workflow is not part of pull
+request validation, and pull request tests do not write that ref.
 
 ## What other organizations do next
 

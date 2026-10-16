@@ -71,6 +71,7 @@ def _module(name: str, relative: str):
 
 
 kernel = _module("org_kernel_egress", "org-kernel/kernel.py")
+ledger_store = _module("ledger_store_egress", "resident-runtime/ledger_store.py")
 repository_ledger = _module("repo_transition_emit_egress", ".stegverse/transition-ledger/emit.py")
 organization_ledger = _module("aggregate_repo_transition_egress",
                               "resident-runtime/aggregate_repo_transition.py")
@@ -254,6 +255,7 @@ def emission_record(resolved: Mapping[str, Any], origin: str, packet: Mapping[st
         "origin_organization": origin,
         **dict(resolved),
         "packet_id": packet["packet_id"],
+        "communication_id": payload.get("communication_id") if isinstance(payload, Mapping) else None,
         "frame_sha256": frame.get("frame_sha256"),
         "payload_sha256": sha(dict(payload)),
         "far_side_payload_hash": kernel.sha(dict(payload)),
@@ -333,21 +335,27 @@ def _record(transition_id: str, transition_class: str, predecessor: str, success
             record: Mapping[str, Any], hb_epoch: int | None) -> dict[str, Any]:
     """Append at both levels. The organization owner is ``append``.
 
-    A supplied epoch makes a replay of the same emission return the recorded
-    pair. The organization receipt takes the repository receipt's epoch.
+    A later attempt for the same transition returns the recorded pair. Identity
+    is the transition id and class, plus the communication id, payload digest,
+    and disposition. A frame stamped at another time is the same transition.
+    The organization receipt takes the repository receipt's epoch.
     """
-    idempotent = hb_epoch is not None
     repository_receipt = repository_ledger.append(
         transition_id, transition_class, predecessor, successor,
         dict(record), "NONE", hb_epoch=hb_epoch,
-        idempotent_on=("frame_sha256", "payload_sha256") if idempotent else None)
+        idempotent_on=("communication_id", "payload_sha256", "disposition"))
     epoch = repository_receipt["hb_reference"]["epoch"]
+    boundary = {
+        "operation": OPERATION_ID,
+        "intended_action": record["intended_action"],
+        "disposition": record["disposition"],
+        "crossed_an_organization_boundary": record["crossed_an_organization_boundary"],
+    }
+    if isinstance(record.get("communication_id"), str):
+        boundary["communication_id"] = record["communication_id"]
     organization_receipt = organization_ledger.append(
         repository_receipt, "REPO_STATE_PROPAGATION", predecessor, successor,
-        {"operation": OPERATION_ID, "intended_action": record["intended_action"],
-         "disposition": record["disposition"],
-         "crossed_an_organization_boundary": record["crossed_an_organization_boundary"]},
-        "NONE", hb_epoch=epoch, idempotent=True)
+        boundary, "NONE", hb_epoch=epoch, idempotent=True)
     return {"repository_receipt": repository_receipt,
             "organization_receipt": organization_receipt}
 
@@ -464,19 +472,19 @@ def reconstruct_far_side_chain(packet_id: str, service_id: str, payload_hash: st
 
 
 def recorded_emission(packet_id: str) -> dict[str, Any] | None:
-    root = repository_ledger.lr()
-    head_path = root / "HEAD.json"
-    if not head_path.is_file():
+    """The emission evidence recorded for this packet, from the repository chain."""
+    store = ledger_store.open_store(repository_ledger.lr())
+    head = store.get(ledger_store.HEAD_KEY)
+    if not isinstance(head, dict):
         return None
-    cursor = json.loads(head_path.read_text(encoding="utf-8")).get("receipt_sha256")
+    cursor = head.get("receipt_sha256")
     wanted = EMITTED_CLASS + ":" + packet_id
     seen: set[str] = set()
     while isinstance(cursor, str) and cursor and cursor not in seen:
         seen.add(cursor)
-        path = root / "receipts" / (cursor.split(":", 1)[-1] + ".json")
-        if not path.is_file():
+        receipt = store.get(ledger_store.receipt_key(cursor))
+        if not isinstance(receipt, dict):
             return None
-        receipt = json.loads(path.read_text(encoding="utf-8"))
         if (receipt.get("transition_class") == EMITTED_CLASS
                 and receipt.get("transition_id") == wanted):
             evidence = receipt.get("evidence")

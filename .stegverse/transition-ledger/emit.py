@@ -1,52 +1,211 @@
 #!/usr/bin/env python3
-import argparse,hashlib,json,os
-from datetime import datetime,timezone
+"""Append repository transition receipts to the store the materializer names.
+
+The default location is the repository subtree of this organization's published
+ledger ref (`contract.json` `repository_ledger_location`), not a host state
+directory. `STEGVERSE_REPO_LEDGER_ROOT` overrides that for a redirected run.
+A plain path stays a POSIX root. `git+<repository>#<ref>[:<namespace>]` is a
+git ref. Authority and time are constraint variables. A disposition is
+transition evidence only.
+"""
+import argparse
+import hashlib
+import importlib.util
+import json
+import os
+import re
+from datetime import datetime, timezone
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[2];C=json.loads((ROOT/".stegverse/transition-ledger/contract.json").read_text())
-def canon(v):return json.dumps(v,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()
-def sha(v):return "sha256:"+hashlib.sha256(v if isinstance(v,(bytes,bytearray)) else canon(v)).hexdigest()
+
+ROOT = Path(__file__).resolve().parents[2]
+C = json.loads((ROOT / ".stegverse/transition-ledger/contract.json").read_text())
+_spec = importlib.util.spec_from_file_location(
+    "ledger_store", ROOT / "resident-runtime/ledger_store.py")
+ledger_store = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(ledger_store)
+
+CHAIN_BREAK = "REPO_LEDGER_CHAIN_BREAK"
+DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def canon(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+
+
+def sha(value):
+    raw = value if isinstance(value, (bytes, bytearray)) else canon(value)
+    return "sha256:" + hashlib.sha256(raw).hexdigest()
+
+
+def published_locator():
+    """The repository chain inside the published organization ledger ref."""
+    location = C["repository_ledger_location"]
+    return "git+" + str(ROOT) + "#" + location["ref"] + ":" + location["namespace"]
+
+
 def lr():
- o=os.getenv("STEGVERSE_REPO_LEDGER_ROOT")
- if o:return Path(o).expanduser().resolve()
- return (Path(os.getenv("XDG_STATE_HOME",str(Path.home()/".local/state")))/"stegverse/repo-ledgers"/C["repository"]).resolve()
-def recorded(transition_id, transition_class):
-    """The receipt already bound to this transition, walking back from HEAD."""
-    root=lr(); head=root/"HEAD.json"
-    if not head.is_file(): return None
-    cursor=json.loads(head.read_text()).get("receipt_sha256"); seen=set()
-    while isinstance(cursor,str) and cursor and cursor not in seen:
+    """The repository ledger location: the override, or the published ref."""
+    override = os.getenv("STEGVERSE_REPO_LEDGER_ROOT")
+    if override:
+        return ledger_store.parse_locator(override)
+    return ledger_store.parse_locator(published_locator())
+
+
+class RepoLedgerChainBreak(ValueError):
+    """A node reachable from HEAD is missing, malformed, or not the receipt its digest names."""
+
+    failed_predicate = CHAIN_BREAK
+
+    def __init__(self, receipt_sha256, detail):
+        super().__init__(CHAIN_BREAK + ": " + detail + ": " + repr(receipt_sha256))
+        self.receipt_sha256 = receipt_sha256
+        self.detail = detail
+
+
+def chain_break_refusal(exc):
+    """The append attempt's disposition when the chain it would extend is broken."""
+    return {
+        "schema": "stegverse.repo-ledger-append-refusal/v1",
+        "repository": C["repository"],
+        "disposition": "FAIL_CLOSED",
+        "failed_predicate": exc.failed_predicate,
+        "detail": exc.detail,
+        "receipt_sha256": exc.receipt_sha256,
+        "failure_code": "REPO_LEDGER_CHAIN_BROKEN",
+        "required_evidence_or_repair": (
+            "restore the receipt addressed by receipt_sha256, byte-for-byte as recorded; "
+            "a chain is never re-minted over a break"
+        ),
+        "retry_entrypoint": ".stegverse/transition-ledger/emit.py::append",
+        "owning_existing_goal": "ORGANIZATION-LEDGER-PUBLISHED-REF",
+        "next_attempt": "rerun the same append once the addressed receipt is restored; nothing was appended",
+        "consequence_committed": False,
+        "authority_effect": "NONE_REFUSAL_ONLY",
+    }
+
+
+def node(target, cursor):
+    """The receipt `cursor` addresses, recomputed and proven to be that receipt."""
+    if not isinstance(cursor, str) or not DIGEST.match(cursor):
+        raise RepoLedgerChainBreak(cursor, "malformed_receipt_address")
+    try:
+        receipt = target.get(ledger_store.receipt_key(cursor))
+    except ValueError:
+        raise RepoLedgerChainBreak(cursor, "unreadable_receipt") from None
+    if receipt is None:
+        raise RepoLedgerChainBreak(cursor, "missing_receipt")
+    if not isinstance(receipt, dict):
+        raise RepoLedgerChainBreak(cursor, "malformed_receipt")
+    if sha({key: value for key, value in receipt.items() if key != "receipt_sha256"}) != cursor:
+        raise RepoLedgerChainBreak(cursor, "receipt_body_does_not_hash_to_its_address")
+    if receipt.get("receipt_sha256") != cursor:
+        raise RepoLedgerChainBreak(cursor, "stored_receipt_sha256_is_not_its_address")
+    return receipt
+
+
+def chain(target, head):
+    """Every receipt reachable from `head`, newest first, each one verified."""
+    if head is None:
+        return
+    cursor = head.get("receipt_sha256") if isinstance(head, dict) else None
+    if cursor is None:
+        raise RepoLedgerChainBreak(None, "malformed_head")
+    seen = set()
+    while cursor is not None:
+        if cursor in seen:
+            raise RepoLedgerChainBreak(cursor, "cycle")
         seen.add(cursor)
-        path=root/"receipts"/(cursor.split(":",1)[-1]+".json")
-        if not path.is_file(): return None
-        receipt=json.loads(path.read_text())
-        if receipt.get("transition_id")==transition_id and receipt.get("transition_class")==transition_class:
-            return receipt
-        cursor=receipt.get("previous_receipt_sha256")
-    return None
-def append(transition_id, transition_class, predecessor_state_sha256, successor_state_sha256, evidence=None, authority_effect="NONE", hb_epoch=None, idempotent_on=None, store=None):
+        receipt = node(target, cursor)
+        yield receipt
+        cursor = receipt.get("previous_receipt_sha256")
+
+
+def recorded(transition_id, transition_class, store=None):
+    """The receipt already bound to this transition, walking back from HEAD.
+
+    The whole chain is verified even after a match, so an answer is never read
+    off a chain that is broken further back.
+    """
+    target = store or ledger_store.open_store(lr())
+    found = None
+    for receipt in chain(target, target.get(ledger_store.HEAD_KEY)):
+        if (found is None and receipt.get("transition_id") == transition_id
+                and receipt.get("transition_class") == transition_class):
+            found = receipt
+    return found
+
+
+def _heartbeat(hb_epoch):
+    return {
+        "epoch": hb_epoch,
+        "progression_dependency": "OSCILLATOR_ONLY",
+        "authority_effect": "NONE",
+    }
+
+
+def append(transition_id, transition_class, predecessor_state_sha256, successor_state_sha256,
+           evidence=None, authority_effect="NONE", hb_epoch=None, idempotent_on=None, store=None):
     """Append one repository receipt. A replay of the same transition returns the recorded one."""
-    del store
-    evidence=dict(evidence or {})
-    root=lr(); receipts=root/"receipts"; receipts.mkdir(parents=True,exist_ok=True); head_path=root/"HEAD.json"
-    existing=recorded(transition_id, transition_class)
-    if existing is not None:
-        prior=existing.get("evidence") if isinstance(existing.get("evidence"),dict) else {}
-        keys=tuple(idempotent_on) if idempotent_on else tuple(evidence.keys())
-        if all(prior.get(key)==evidence.get(key) for key in keys): return existing
-        raise ValueError("ledger_receipt_collision")
-    prev=json.loads(head_path.read_text()).get("receipt_sha256") if head_path.is_file() else None
-    observed=f"hb-epoch:{hb_epoch}" if hb_epoch is not None else datetime.now(timezone.utc).isoformat()
-    body={"schema":"stegverse.repo-transition-receipt/v1","repository":C["repository"],"transition_id":transition_id,"transition_class":transition_class,"predecessor_state_sha256":predecessor_state_sha256,"successor_state_sha256":successor_state_sha256,"evidence":evidence,"authority_effect":authority_effect,"hb_reference":{"epoch":hb_epoch,"progression_dependency":"OSCILLATOR_ONLY","authority_effect":"NONE"},"observed_at":observed,"previous_receipt_sha256":prev}
-    digest=sha(body); record={**body,"receipt_sha256":digest}; path=receipts/(digest.split(":",1)[1]+".json")
-    if path.exists() and json.loads(path.read_text())!=record: raise ValueError("ledger_receipt_collision")
-    if not path.exists(): path.write_text(json.dumps(record,indent=2,sort_keys=True)+"\n")
-    head_path.write_text(json.dumps({"repository":C["repository"],"receipt_sha256":digest,"receipt_path":str(path)},indent=2,sort_keys=True)+"\n")
-    return record
+    evidence = dict(evidence or {})
+    target = store or ledger_store.open_store(lr())
+    target.initialize()
+    observed = f"hb-epoch:{hb_epoch}" if hb_epoch is not None else datetime.now(timezone.utc).isoformat()
+    for _attempt in range(128):
+        expected_head = target.get(ledger_store.HEAD_KEY)
+        prior = recorded(transition_id, transition_class, store=target)
+        if prior is not None:
+            theirs = prior.get("evidence") if isinstance(prior.get("evidence"), dict) else {}
+            keys = tuple(idempotent_on) if idempotent_on else tuple(evidence.keys())
+            if all(theirs.get(key) == evidence.get(key) for key in keys):
+                return prior
+            raise ValueError("ledger_receipt_collision")
+        previous = (expected_head or {}).get("receipt_sha256") if isinstance(expected_head, dict) else None
+        body = {
+            "schema": "stegverse.repo-transition-receipt/v1",
+            "repository": C["repository"],
+            "transition_id": transition_id,
+            "transition_class": transition_class,
+            "predecessor_state_sha256": predecessor_state_sha256,
+            "successor_state_sha256": successor_state_sha256,
+            "evidence": evidence,
+            "authority_effect": authority_effect,
+            "hb_reference": _heartbeat(hb_epoch),
+            "observed_at": observed,
+            "previous_receipt_sha256": previous,
+        }
+        digest = sha(body)
+        record = {**body, "receipt_sha256": digest}
+        key = ledger_store.receipt_key(digest)
+        new_head = {
+            "repository": C["repository"],
+            "receipt_sha256": digest,
+            "receipt_path": target.locator(key),
+        }
+        if target.append_transaction(key, record, expected_head, new_head):
+            return record
+    raise SystemExit("REPO_LEDGER_APPEND_CONTENTION_EXHAUSTED")
+
+
 def main():
- p=argparse.ArgumentParser();p.add_argument("--transition-id",required=True);p.add_argument("--transition-class",required=True);p.add_argument("--predecessor-state-sha256",required=True);p.add_argument("--successor-state-sha256",required=True);p.add_argument("--evidence-json",default="{}");p.add_argument("--authority-effect",default="NONE");p.add_argument("--hb-ref");a=p.parse_args()
- root=lr();d=root/"receipts";d.mkdir(parents=True,exist_ok=True);h=root/"HEAD.json";prev=json.loads(h.read_text()).get("receipt_sha256") if h.exists() else None
- b={"schema":"stegverse.repo-transition-receipt/v1","repository":C["repository"],"transition_id":a.transition_id,"transition_class":a.transition_class,"predecessor_state_sha256":a.predecessor_state_sha256,"successor_state_sha256":a.successor_state_sha256,"evidence":json.loads(a.evidence_json),"authority_effect":a.authority_effect,"hb_reference":a.hb_ref,"observed_at":datetime.now(timezone.utc).isoformat(),"previous_receipt_sha256":prev};dg=sha(b);r={**b,"receipt_sha256":dg};fp=d/(dg.split(":",1)[1]+".json")
- if fp.exists() and json.loads(fp.read_text())!=r:raise SystemExit("receipt collision")
- if not fp.exists():fp.write_text(json.dumps(r,indent=2,sort_keys=True)+"\n")
- h.write_text(json.dumps({"repository":C["repository"],"receipt_sha256":dg,"receipt_path":str(fp)},indent=2,sort_keys=True)+"\n");print(json.dumps(r,sort_keys=True))
-if __name__=="__main__":main()
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--transition-id", required=True)
+    parser.add_argument("--transition-class", required=True)
+    parser.add_argument("--predecessor-state-sha256", required=True)
+    parser.add_argument("--successor-state-sha256", required=True)
+    parser.add_argument("--evidence-json", default="{}")
+    parser.add_argument("--authority-effect", default="NONE")
+    parser.add_argument("--hb-epoch", type=int, default=None)
+    args = parser.parse_args()
+    try:
+        record = append(
+            args.transition_id, args.transition_class, args.predecessor_state_sha256,
+            args.successor_state_sha256, json.loads(args.evidence_json), args.authority_effect,
+            hb_epoch=args.hb_epoch)
+    except RepoLedgerChainBreak as exc:
+        print(json.dumps(chain_break_refusal(exc), sort_keys=True))
+        raise SystemExit(1)
+    print(json.dumps(record, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()
