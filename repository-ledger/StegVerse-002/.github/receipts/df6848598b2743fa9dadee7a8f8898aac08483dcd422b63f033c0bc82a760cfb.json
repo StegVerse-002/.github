@@ -1,0 +1,38 @@
+{
+  "authority_effect": "NONE",
+  "evidence": {
+    "admission_authority_constraint": "CONSTRAINT_VARIABLE",
+    "authority_effect": "NONE_DIAGNOSTIC_ACK_ONLY",
+    "communication_id": "intr-selfclose-StegVerse-002-20261017",
+    "disposition": "ALLOW",
+    "disposition_role": "TRANSITION_EVIDENCE_ONLY",
+    "execution_authority_constraint": "CONSTRAINT_VARIABLE",
+    "operation": "DIAGNOSTIC_CROSSING",
+    "owner_repository": "StegVerse-002/.github",
+    "packet_id": "pkt-55848e1424bade0b27bdec50",
+    "payload_schema": "stegverse.org-intr-destination-diagnostic/v1",
+    "payload_sha256": "sha256:904e345e1d5ada9c42a03a0f399e70e239b602f73ae20589d4aae94baf91772a",
+    "profile_id": "intr-destination",
+    "profile_name": "InTr:Destination",
+    "purpose_specific_route": false,
+    "receiving_operation": "ORGANIZATION_INTR_DESTINATION_INGRESS",
+    "routing_authority_constraint": "CONSTRAINT_VARIABLE",
+    "selects_processing": false,
+    "standing_rechecked_here": false,
+    "time_constraint": "CONSTRAINT_VARIABLE"
+  },
+  "hb_reference": {
+    "authority_effect": "NONE",
+    "epoch": null,
+    "progression_dependency": "OSCILLATOR_ONLY"
+  },
+  "observed_at": "2026-10-17T02:55:23.600922+00:00",
+  "predecessor_state_sha256": "sha256:904e345e1d5ada9c42a03a0f399e70e239b602f73ae20589d4aae94baf91772a",
+  "previous_receipt_sha256": "sha256:a2ef2e835458cf31295d3622f9e530dff7f6173fa77aa81a167afb751a2000d8",
+  "receipt_sha256": "sha256:df6848598b2743fa9dadee7a8f8898aac08483dcd422b63f033c0bc82a760cfb",
+  "repository": "StegVerse-002/.github",
+  "schema": "stegverse.repo-transition-receipt/v1",
+  "successor_state_sha256": "sha256:4f765b619a032612453bacfadd6a10d7ce5015f76bb934b4bb2c9e5a17ed1d30",
+  "transition_class": "ORGANIZATION_INTR_DESTINATION_INGRESS",
+  "transition_id": "ORGANIZATION_INTR_DESTINATION_INGRESS:pkt-55848e1424bade0b27bdec50"
+}
