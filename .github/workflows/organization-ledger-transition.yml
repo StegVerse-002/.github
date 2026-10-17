@@ -36,6 +36,10 @@ on:
         description: 'communication_id the diagnostic self-closure correlates on (blank derives one from this run)'
         required: false
         default: ''
+      hb_epoch:
+        description: 'supplied heartbeat epoch the receipts carry (non-negative integer); no clock is read for it'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -76,6 +80,7 @@ jobs:
       contents: write
     env:
       LEDGER_REF: refs/stegverse/organization-ledger
+      HB_EPOCH: ${{ github.event.inputs.hb_epoch }}
     steps:
       - name: Checkout organization boundary
         uses: actions/checkout@v4
@@ -136,8 +141,15 @@ jobs:
           # fast-forward push below (contract.json repository_ledger_location).
           export STEGVERSE_REPO_LEDGER_ROOT="git+$GITHUB_WORKSPACE#$LEDGER_REF:$REPO_LEDGER_NAMESPACE"
           mkdir -p "$RUNNER_TEMP/results" "$RUNNER_TEMP/mesh"
+          # Time is supplied with the dispatch. It is not sampled from a clock.
+          case "$HB_EPOCH" in
+            ''|*[!0-9]*)
+              echo '{"disposition":"FAIL_CLOSED","failure_code":"DISPATCH_HB_EPOCH_INVALID","failed_predicate":"HB_EPOCH_IS_SUPPLIED_AS_A_NON_NEGATIVE_INTEGER","retry_entrypoint":".github/workflows/organization-ledger-transition.yml","consequence_committed":false}'
+              exit 1 ;;
+          esac
           python3 resident-runtime/intr_destination_ingress.py \
             --self-closure \
+            --hb-epoch "$HB_EPOCH" \
             --communication-id "$COMMUNICATION_ID" \
             --mesh-root "$RUNNER_TEMP/mesh" \
             --out "$RUNNER_TEMP/results/self-closure.json"

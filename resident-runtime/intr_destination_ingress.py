@@ -36,6 +36,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Mapping
@@ -241,6 +242,7 @@ def receive(payload: Any, *, registry: Mapping[str, Any], standing: Mapping[str,
     carry standing, and a diagnostic does not leave, so neither is used.
     """
     del standing, mesh_root
+    hb_epoch = _supplied_epoch(hb_epoch)
     if not isinstance(registry, Mapping):
         return _recorded(DENY, payload, packet_id, hb_epoch,
                          failed_predicate="CAPABILITY_MAP_IS_A_MAPPING",
@@ -253,6 +255,18 @@ def receive(payload: Any, *, registry: Mapping[str, Any], standing: Mapping[str,
 
 
 SELF_CLOSURE_SCHEMA = "stegverse.org-intr-destination-self-closure/v1"
+
+#: The epoch a caller supplied for a crossing, carried to the receiving
+#: operation when the kernel's dispatch does not pass one. Unset is no epoch;
+#: it is never filled from a clock.
+SUPPLIED_EPOCH_ENV = "STEGVERSE_HB_EPOCH"
+
+
+def _supplied_epoch(hb_epoch: int | None) -> int | None:
+    if hb_epoch is not None:
+        return hb_epoch
+    value = os.environ.get(SUPPLIED_EPOCH_ENV, "")
+    return int(value) if value.isdigit() else None
 
 
 def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
@@ -323,7 +337,18 @@ def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
         result["failed_predicate"] = emitted.get("failed_predicate")
         result["detail"] = emitted.get("detail")
         return result
-    consumed_frames = kernel_mod.consume_addressed_frames(ROOT, mesh_root=mesh_root)
+    # The kernel's dispatch does not carry an epoch to the receiving operation,
+    # so the supplied one travels with this process for the consume only.
+    previous_epoch = os.environ.get(SUPPLIED_EPOCH_ENV)
+    if hb_epoch is not None:
+        os.environ[SUPPLIED_EPOCH_ENV] = str(hb_epoch)
+    try:
+        consumed_frames = kernel_mod.consume_addressed_frames(ROOT, mesh_root=mesh_root)
+    finally:
+        if previous_epoch is None:
+            os.environ.pop(SUPPLIED_EPOCH_ENV, None)
+        else:
+            os.environ[SUPPLIED_EPOCH_ENV] = previous_epoch
     if len(consumed_frames) != 1 or consumed_frames[0]["result"].get("status") != "CONSUMED":
         result["failed_predicate"] = "SELF_DIAGNOSTIC_IS_CONSUMED_AT_THIS_ADDRESS"
         result["detail"] = "the emitted frame was not consumed here"
