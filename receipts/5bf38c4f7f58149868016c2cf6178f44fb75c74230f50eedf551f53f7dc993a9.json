@@ -1,0 +1,29 @@
+{
+  "authority_effect": "NONE",
+  "boundary_evidence": {
+    "communication_id": "intr-selfclose-StegVerse-002-20261017",
+    "crossed_an_organization_boundary": true,
+    "disposition": "ALLOW",
+    "intended_action": "CROSS_AN_ORGANIZATION_BOUNDARY_OUTBOUND",
+    "operation": "ORGANIZATION_INTR_DESTINATION_EGRESS"
+  },
+  "hb_reference": {
+    "authority_effect": "NONE",
+    "epoch": null,
+    "progression_dependency": "OSCILLATOR_ONLY"
+  },
+  "observed_at": "2026-10-17T02:55:23.563709+00:00",
+  "org_transition_class": "REPO_STATE_PROPAGATION",
+  "organization": "StegVerse-002",
+  "predecessor_org_state_sha256": "sha256:904e345e1d5ada9c42a03a0f399e70e239b602f73ae20589d4aae94baf91772a",
+  "previous_receipt_sha256": null,
+  "receipt_sha256": "sha256:5bf38c4f7f58149868016c2cf6178f44fb75c74230f50eedf551f53f7dc993a9",
+  "repo_receipt_sha256": "sha256:a2ef2e835458cf31295d3622f9e530dff7f6173fa77aa81a167afb751a2000d8",
+  "repo_transition_id": "ORGANIZATION_EGRESS_EMITTED:pkt-55848e1424bade0b27bdec50",
+  "schema": "stegverse.organization-transition-receipt/v1",
+  "source_receipt_schema": "stegverse.repo-transition-receipt/v1",
+  "source_repository": "StegVerse-002/.github",
+  "source_transition_id": "ORGANIZATION_EGRESS_EMITTED:pkt-55848e1424bade0b27bdec50",
+  "source_transition_sha256": "sha256:a2ef2e835458cf31295d3622f9e530dff7f6173fa77aa81a167afb751a2000d8",
+  "successor_org_state_sha256": "sha256:5d74191dd687cb00c833de2a62da21a494a0c10eac83f390760ed97c4ed37cd5"
+}
