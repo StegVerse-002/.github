@@ -16,6 +16,11 @@ correlates on, so an outbound diagnostic can be emitted and closed. The body
 schema is ``stegverse.org-intr-destination-diagnostic/v1``. A body that is not
 that schema is a refusal, recorded, not an acknowledgement.
 
+``diagnostic_self_closure`` emits that diagnostic to the address this
+organization serves, consumes it here, and closes it. The repository and
+organization receipts, including ``communication_id``, are appended wherever
+emission is pointed: by default the published organization ledger ref.
+
 The profile name ``InTr:Destination`` is local to this binding. The pinned SDK
 baseline does not declare the profile, and the canonical StegOS connector
 registry was not readable from the change that added it, so this repository
@@ -247,18 +252,137 @@ def receive(payload: Any, *, registry: Mapping[str, Any], standing: Mapping[str,
     return _recorded(ALLOW, payload, packet_id, hb_epoch)
 
 
+SELF_CLOSURE_SCHEMA = "stegverse.org-intr-destination-self-closure/v1"
+
+
+def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
+                            hb_epoch: int | None = None) -> dict[str, Any]:
+    """Close one diagnostic against this organization's own intr-destination.
+
+    The far side is this boundary: the diagnostic is emitted to the address
+    this organization serves, consumed here, answered with this kernel's
+    receipt chain, and closed. Repository and organization receipts at each
+    of those steps carry ``communication_id``. The mesh is only the queue for
+    this run. Which ledger those receipts land on is the ledger location
+    already selected for emission.
+
+    Authority and time stay constraint variables. The disposition is
+    transition evidence only. Resolution still does not prove a separate
+    peer installed the capability.
+    """
+    if not isinstance(communication_id, str) or not communication_id.strip():
+        return {
+            "schema": SELF_CLOSURE_SCHEMA,
+            "disposition": DENY,
+            "closed": False,
+            "communication_id": communication_id if isinstance(communication_id, str) else None,
+            "failed_predicate": "PAYLOAD_CARRIES_THE_COMMUNICATION_ID_CLOSURE_CORRELATES_ON",
+            "detail": repr(communication_id),
+            "receipts_appended": False,
+            **CONSTRAINT_FIELDS,
+            "authority_effect": REFUSAL_EFFECT,
+        }
+    egress = _module("egress_self_closure", "resident-runtime/organization_egress_boundary.py")
+    kernel_mod = _module("kernel_self_closure", "org-kernel/kernel.py")
+    origin = kernel_mod.load_registry(ROOT)["organization"]
+    payload = {
+        "message_class": COMMUNICATION_CLASS,
+        "communication_id": communication_id,
+        "subject": "purpose-neutral mesh diagnostic",
+        "body": {"schema": PAYLOAD_SCHEMA, "probe": "diagnostic-self-closure"},
+    }
+    standing = {
+        "mode": "ESTABLISH_GENESIS",
+        "node_ref": "intr-destination-self-closure",
+        "predecessor": None,
+    }
+    emitted = egress.emit(
+        origin, payload, standing=standing, capability=PROFILE_ID, root=ROOT,
+        mesh_root=mesh_root, hb_epoch=hb_epoch)
+    result = {
+        "schema": SELF_CLOSURE_SCHEMA,
+        "organization": origin,
+        "receiving_operation": OPERATION_ID,
+        "owner_repository": OWNER_REPOSITORY,
+        "profile_id": PROFILE_ID,
+        "communication_id": communication_id,
+        "disposition": DENY,
+        "closed": False,
+        "emission_disposition": emitted.get("disposition"),
+        "emission_repository_receipt_sha256": emitted.get("emission_repository_receipt_sha256"),
+        "emission_organization_receipt_sha256": emitted.get("emission_organization_receipt_sha256"),
+        "packet_id": emitted.get("packet_id"),
+        "destination_service": emitted.get("destination_service"),
+        "peer_serves_this_capability_is_proven_here": False,
+        "selects_processing": False,
+        "purpose_specific_route": False,
+        **CONSTRAINT_FIELDS,
+        "authority_effect": "NONE_CLOSURE_RECORD_ONLY",
+    }
+    if emitted.get("disposition") != ALLOW or not emitted.get("emitted"):
+        result["failed_predicate"] = emitted.get("failed_predicate")
+        result["detail"] = emitted.get("detail")
+        return result
+    consumed_frames = kernel_mod.consume_addressed_frames(ROOT, mesh_root=mesh_root)
+    if len(consumed_frames) != 1 or consumed_frames[0]["result"].get("status") != "CONSUMED":
+        result["failed_predicate"] = "SELF_DIAGNOSTIC_IS_CONSUMED_AT_THIS_ADDRESS"
+        result["detail"] = "the emitted frame was not consumed here"
+        return result
+    consumed = consumed_frames[0]["result"]
+    execution = consumed["execution_result"]
+    operation = (execution.get("application_result") or {}).get("receiving_operation_result") or {}
+    result["ingress_disposition"] = operation.get("disposition")
+    result["ingress_repository_receipt_sha256"] = operation.get("repository_receipt_sha256")
+    result["ingress_organization_receipt_sha256"] = operation.get("organization_receipt_sha256")
+    if operation.get("disposition") != ALLOW:
+        result["failed_predicate"] = operation.get("failed_predicate")
+        result["detail"] = operation.get("detail")
+        return result
+    response = kernel_mod.build_control_response(consumed["packet"], execution)
+    now_ns = None
+    if hb_epoch is not None:
+        now_ns = (kernel_mod.HB_ANCHOR_UNIX_NS
+                  + (hb_epoch - kernel_mod.HB_ANCHOR_EPOCH) * kernel_mod.HB_PERIOD_NS)
+    kernel_mod.publish_packet(response, root=mesh_root, now_ns=now_ns)
+    closed = egress.close(
+        origin, emitted["packet_id"], communication_id, root=ROOT,
+        mesh_root=mesh_root, hb_epoch=hb_epoch)
+    result.update({
+        "disposition": closed.get("disposition"),
+        "closed": bool(closed.get("closed")),
+        "closure_findings": closed.get("closure_findings"),
+        "closure_repository_receipt_sha256": closed.get("closure_repository_receipt_sha256"),
+        "closure_organization_receipt_sha256": closed.get("closure_organization_receipt_sha256"),
+        "repository_receipt_sha256": closed.get("closure_repository_receipt_sha256"),
+        "organization_receipt_sha256": closed.get("closure_organization_receipt_sha256"),
+    })
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--payload", type=Path, required=True)
-    parser.add_argument("--registry", type=Path, required=True)
+    parser.add_argument("--self-closure", action="store_true",
+                        help="emit, receive, and close one diagnostic against this organization")
+    parser.add_argument("--communication-id", default=None)
+    parser.add_argument("--mesh-root", type=Path, default=None)
+    parser.add_argument("--payload", type=Path, default=None)
+    parser.add_argument("--registry", type=Path, default=None)
     parser.add_argument("--packet-id", default="organization-intr-destination")
     parser.add_argument("--hb-epoch", type=int, default=None)
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
-    result = receive(
-        json.loads(args.payload.read_text(encoding="utf-8")),
-        registry=json.loads(args.registry.read_text(encoding="utf-8")),
-        packet_id=args.packet_id, hb_epoch=args.hb_epoch)
+    if args.self_closure:
+        if args.mesh_root is None or args.communication_id is None:
+            raise SystemExit("self-closure requires --communication-id and --mesh-root")
+        result = diagnostic_self_closure(
+            args.communication_id, mesh_root=args.mesh_root, hb_epoch=args.hb_epoch)
+    else:
+        if args.payload is None or args.registry is None:
+            raise SystemExit("receive requires --payload and --registry")
+        result = receive(
+            json.loads(args.payload.read_text(encoding="utf-8")),
+            registry=json.loads(args.registry.read_text(encoding="utf-8")),
+            packet_id=args.packet_id, hb_epoch=args.hb_epoch)
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

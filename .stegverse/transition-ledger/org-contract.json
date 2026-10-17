@@ -8,5 +8,8 @@
   "preserves_repo_receipt": true,
   "append_only_receipts": true,
   "propagation_target": "master-records/.github",
-  "authority_effect": "NONE_CONTRACT_ONLY"
+  "authority_effect": "NONE_CONTRACT_ONLY",
+  "ledger_lock": "ORGANIZATION_LEDGER_LOCK",
+  "organization_ledger_ref": "refs/stegverse/organization-ledger",
+  "organization_ledger_repository": "StegVerse-002/.github"
 }
