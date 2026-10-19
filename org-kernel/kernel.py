@@ -377,6 +377,39 @@ def consuming_epoch(frame:dict[str,Any], hb_epoch:Any=None, *, explicit:bool=Tru
 HB_REFERENCE_INVALID="HB_REFERENCE_INVALID"
 FRAME_INTEGRITY_INVALID="FRAME_INTEGRITY_INVALID"
 FRAME_INGEST_FAILED="FRAME_INGEST_FAILED"
+FRAME_DISPATCH_IO_FAILED="FRAME_DISPATCH_IO_FAILED"
+
+#: Collisions in this boundary's own write-once state, not in what a frame carries.
+OWN_STATE_COLLISIONS={"federation_seen_marker_collision"}
+
+def own_state_fault(error:BaseException)->bool:
+    """Whether ``error`` is a fault writing this repository's own state (F-TRANSIENT-RT).
+
+    The ledgers' dedicated ``LedgerWriteFailed`` (an I/O error, a lost
+    compare-and-swap, a store collision), any OSError met after the frame was
+    read, a lost comparison raised by another store, and a collision in this
+    boundary's seen markers. None is a defect of the frame.
+    """
+    if getattr(error,"own_state_write_failure",False) or isinstance(error,OSError):
+        return True
+    if isinstance(error,RuntimeError) and "lost_comparison" in str(error).lower():
+        return True
+    return isinstance(error,ValueError) and str(error) in OWN_STATE_COLLISIONS
+
+def own_state_write_refusal(error:BaseException, retry_entrypoint:str)->dict[str,Any]:
+    """The six-field, non-terminal refusal for a fault writing this repository's own state.
+
+    Nothing the ledgers name was published, so the same call is retried and
+    lands once; the frame or input is not at fault.
+    """
+    return {"disposition":"FAIL_CLOSED","failure_code":FRAME_DISPATCH_IO_FAILED,
+            "failed_predicate":getattr(error,"failed_predicate",None) or type(error).__name__,
+            "detail":type(error).__name__+": "+str(error),
+            "required_evidence_or_repair":"this repository's own state is writable again; the same input is retried",
+            "retry_entrypoint":retry_entrypoint,
+            "owning_existing_goal":HB_EPOCH_OWNING_EXISTING_GOAL,
+            "next_attempt":"the next cycle retries it; no marker was written and no ledger entry was left unnamed",
+            "terminal":False,"derived_from_clock":False,"consequence_committed":False}
 
 def _check_reference_identity(reference:dict[str,Any])->None:
     """A heartbeat whose generation or id names another epoch than its own is HB_REFERENCE_INVALID."""
@@ -390,13 +423,20 @@ def _check_reference_identity(reference:dict[str,Any])->None:
             HB_REFERENCE_INVALID,"heartbeat id "+repr(reference["heartbeat_id"])+" is not HB:"+str(epoch),
             INGEST_EPOCH_RETRY_ENTRYPOINT,repair="the sender re-emits the crossing with a consistent heartbeat"))
 
-def frame_failure_refusal(error:BaseException)->dict[str,Any]:
+def frame_failure_refusal(error:BaseException, *, own_state:bool=True)->dict[str,Any]:
     """The six-field refusal for an error raised while ingesting one frame (B-P36o). Nothing is written.
 
-    A carrier or packet hash, or a packet binding that does not match its
-    frame, is FRAME_INTEGRITY_INVALID. Any other error is FRAME_INGEST_FAILED,
-    with the exception class as the failed predicate.
+    The guard is total. A fault writing this repository's own state
+    (``own_state_fault``) is checked first: FRAME_DISPATCH_IO_FAILED,
+    ``terminal: false`` and ``frame_left_pending``, so the frame is retried.
+    ``own_state=False`` is for an error reading the frame file itself
+    (B-P36p), which is the frame's. A carrier or packet hash, or a packet
+    binding that does not match its frame, is FRAME_INTEGRITY_INVALID. Any
+    other error, of any class, is FRAME_INGEST_FAILED, with the exception
+    class as the failed predicate.
     """
+    if own_state and own_state_fault(error):
+        return {**own_state_write_refusal(error,INGEST_EPOCH_RETRY_ENTRYPOINT),"frame_left_pending":True}
     if isinstance(error,SuppliedEpochRefused):
         return dict(error.refusal)
     detail=str(error)
@@ -454,14 +494,14 @@ def admit_frame(frame:dict[str,Any], hb_epoch:Any=None, *,
             if service is not None and (stamps_time(service,packet) or answers(packet)):
                 return None,{**_clock_frame_refusal(),"frame_left_pending":True}
         return epoch,None
-    except Exception as error:
+    except (Exception,SystemExit) as error:
         return None,frame_failure_refusal(error)
 
 def admit_item(item:dict[str,Any], hb_epoch:Any=None, *,
                root:Path|None=None)->tuple[int|None,dict[str,Any]|None]:
     """``admit_frame`` for a scanned item. A file that is not a frame is FRAME_INGEST_FAILED (F-SCAN)."""
     if "unreadable" in item:
-        return None,frame_failure_refusal(item["unreadable"])
+        return None,frame_failure_refusal(item["unreadable"],own_state=False)
     return admit_frame(item["frame"],hb_epoch,root=root)
 
 def ingest_frame(root:Path, frame:dict[str,Any], *, mesh_root:Path|None=None,
@@ -488,7 +528,7 @@ __all__=["hb_reference","HB_EPOCH_NOT_SUPPLIED","HB_EPOCH_INVALID","SuppliedEpoc
          "HB_EPOCH_PROVENANCE_UNMARKED","CARRIED_PROVENANCE_UNVERIFIED","HB_EPOCH_CONFLICT",
          "SHARED_VALIDATOR_SHA256","supplied_epoch_failure","stamps_time",
          "SUPPLIED_EPOCH_ENV","caller_epoch","epoch_now_ns","frame_epoch","consuming_epoch","carried_refusal",
-         "FRAME_REFUSED_QUARANTINED","admit_frame","frame_failure_refusal","FRAME_FILE_MAX_BYTES","answers",
+         "FRAME_REFUSED_QUARANTINED","admit_frame","FRAME_DISPATCH_IO_FAILED","own_state_fault","own_state_write_refusal","frame_failure_refusal","FRAME_FILE_MAX_BYTES","answers",
          "HB_REFERENCE_INVALID","FRAME_INTEGRITY_INVALID","FRAME_INGEST_FAILED","derive_channel","carrier_frame","recover_packet","dispatch","persist_outbox","ingest_frame",
          "capability_ingress","CAPABILITY_INGRESS_ROLE"]
 
@@ -597,10 +637,11 @@ def consume_addressed_frames(repo_root:Path, *, mesh_root:Path|None=None, seen:s
             continue
         try:
             result=ingest_frame(repo_root,item["frame"],mesh_root=mesh_root,hb_epoch=epoch)
-        except Exception as error:
+        except (Exception,SystemExit) as error:
             # B-P36o: one frame's failure is that frame's refusal; the next frame proceeds.
-            result={"status":"REFUSED","packet_id":item["frame"].get("packet_id"),
-                    "refusal":frame_failure_refusal(error)}
+            refusal=frame_failure_refusal(error)
+            result={"status":"PENDING" if refusal.get("frame_left_pending") else "REFUSED",
+                    "packet_id":item["frame"].get("packet_id"),"refusal":refusal}
         results.append({"path":item["path"],"result":result})
     return results
 
@@ -837,20 +878,32 @@ def consume_and_respond(repo_root:Path, *, mesh_root:Path|None=None, seen:set[st
     out=[]
     items=scan_addressed_frames(organization,root=mesh_root,seen=effective_seen,include_unreadable=True)
     admitted=[admit_item(item,hb_epoch,root=repo_root) for item in items]
+    def pending(item:dict[str,Any], refusal:dict[str,Any])->dict[str,Any]:
+        # §Q, F-TRANSIENT-RT: the cycle lacks the epoch, or this repository's own
+        # state could not be written; neither is the frame's defect. No seen
+        # marker and no quarantine, so a later cycle consumes it once.
+        status=("PENDING_DISPATCH_IO_FAILED" if refusal.get("failure_code")==FRAME_DISPATCH_IO_FAILED
+                else "PENDING_EPOCH_NOT_SUPPLIED")
+        return {"path":item["path"],
+                "result":{"status":status,"packet_id":(item["frame"] or {}).get("packet_id"),"refusal":refusal},
+                "response_publication":None,"seen_marker":None}
+    def quarantined(item:dict[str,Any], refusal:dict[str,Any])->dict[str,Any]:
+        try:
+            marker=quarantine_refused_frame(repo_root,item["path"],item["frame"],refusal)
+        except (Exception,SystemExit) as error:
+            if not own_state_fault(error):
+                raise
+            return pending(item,{**own_state_write_refusal(error,INGEST_EPOCH_RETRY_ENTRYPOINT),
+                                 "frame_left_pending":True})
+        return {"path":item["path"],
+                "result":{"status":"REFUSED_QUARANTINED","packet_id":(item["frame"] or {}).get("packet_id"),
+                          "refusal":refusal},
+                "response_publication":None,"seen_marker":str(marker)}
     for item,(epoch,refusal) in zip(items,admitted):
         if refusal is not None and refusal.get("frame_left_pending"):
-            # §Q: the cycle lacks the epoch, not the frame. No seen marker and no
-            # quarantine; a later cycle that carries an epoch consumes it.
-            out.append({"path":item["path"],
-                        "result":{"status":"PENDING_EPOCH_NOT_SUPPLIED","packet_id":(item["frame"] or {}).get("packet_id"),
-                                  "refusal":refusal},
-                        "response_publication":None,"seen_marker":None})
+            out.append(pending(item,refusal))
         elif refusal is not None:
-            marker=quarantine_refused_frame(repo_root,item["path"],item["frame"],refusal)
-            out.append({"path":item["path"],
-                        "result":{"status":"REFUSED_QUARANTINED","packet_id":(item["frame"] or {}).get("packet_id"),
-                                  "refusal":refusal},
-                        "response_publication":None,"seen_marker":str(marker)})
+            out.append(quarantined(item,refusal))
     def respond(item:dict[str,Any], epoch:int|None)->dict[str,Any]:
         packet=recover_packet(item["frame"])
         payload=packet.get("payload") or {}
@@ -880,15 +933,12 @@ def consume_and_respond(repo_root:Path, *, mesh_root:Path|None=None, seen:set[st
             continue
         try:
             out.append(respond(item,epoch))
-        except Exception as error:
+        except (Exception,SystemExit) as error:
             # B-P36o: an error ingesting one frame is that frame's six-field refusal and a
-            # terminal quarantine. The cycle continues to the next frame.
+            # terminal quarantine; a fault writing this repository's own state leaves it
+            # pending instead. The cycle continues to the next frame.
             refusal=frame_failure_refusal(error)
-            marker=quarantine_refused_frame(repo_root,item["path"],item["frame"],refusal)
-            out.append({"path":item["path"],
-                        "result":{"status":"REFUSED_QUARANTINED","packet_id":item["frame"].get("packet_id"),
-                                  "refusal":refusal},
-                        "response_publication":None,"seen_marker":str(marker)})
+            out.append(pending(item,refusal) if refusal.get("frame_left_pending") else quarantined(item,refusal))
     return out
 
 def collect_ecosystem_responses(origin_org:str, communication_id:str, *, mesh_root:Path|None=None)->dict[str,Any]:
@@ -959,6 +1009,27 @@ def federation_seen_frame_names(repo_root:Path)->set[str]:
             continue
     return names
 
+def _write_once_marker(marker_path:Path, marker:dict[str,Any])->Path:
+    """Write a seen marker once, atomically, so a failed write leaves no partial marker."""
+    if marker_path.exists():
+        try:
+            existing=json.loads(marker_path.read_text())
+        except ValueError:
+            existing=None  # not a marker: no frame is recorded as seen by it
+        if existing==marker:
+            return marker_path
+        if existing is not None:
+            raise ValueError("federation_seen_marker_collision")
+    fd,temp=tempfile.mkstemp(prefix=".seen-",suffix=".tmp",dir=str(marker_path.parent))
+    try:
+        with os.fdopen(fd,"w") as stream:
+            stream.write(json.dumps(marker,indent=2,sort_keys=True)+"\n")
+        os.replace(temp,marker_path)
+    finally:
+        if os.path.exists(temp):
+            os.unlink(temp)
+    return marker_path
+
 def quarantine_refused_frame(repo_root:Path, frame_path:str, frame:dict[str,Any], refusal:dict[str,Any])->Path:
     """The six-field seen marker that makes a refused frame terminal. No clock is read."""
     seen_dir=repo_root/"resident-runtime/federation/seen.d"
@@ -986,13 +1057,7 @@ def quarantine_refused_frame(repo_root:Path, frame_path:str, frame:dict[str,Any]
       "consequence_committed":False,
       "authority_effect":"NONE_CARRIER_ONLY"
     }
-    marker_path=seen_dir/(hashlib.sha256(frame_name.encode()).hexdigest()+".json")
-    if marker_path.exists():
-        if json.loads(marker_path.read_text())!=marker:
-            raise ValueError("federation_seen_marker_collision")
-    else:
-        marker_path.write_text(json.dumps(marker,indent=2,sort_keys=True)+"\n")
-    return marker_path
+    return _write_once_marker(seen_dir/(hashlib.sha256(frame_name.encode()).hexdigest()+".json"),marker)
 
 def mark_federation_frame_seen(repo_root:Path, frame_path:str, frame:dict[str,Any], result:dict[str,Any])->Path:
     seen_dir=repo_root/"resident-runtime/federation/seen.d"
@@ -1007,10 +1072,4 @@ def mark_federation_frame_seen(repo_root:Path, frame_path:str, frame:dict[str,An
       "status":result.get("status"),
       "authority_effect":"NONE_CARRIER_ONLY"
     }
-    marker_path=seen_dir/(hashlib.sha256(frame_name.encode()).hexdigest()+".json")
-    if marker_path.exists():
-        if json.loads(marker_path.read_text())!=marker:
-            raise ValueError("federation_seen_marker_collision")
-    else:
-        marker_path.write_text(json.dumps(marker,indent=2,sort_keys=True)+"\n")
-    return marker_path
+    return _write_once_marker(seen_dir/(hashlib.sha256(frame_name.encode()).hexdigest()+".json"),marker)

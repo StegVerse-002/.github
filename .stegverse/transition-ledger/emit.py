@@ -191,9 +191,11 @@ def append(transition_id, transition_class, predecessor_state_sha256, successor_
             "receipt_sha256": digest,
             "receipt_path": target.locator(key),
         }
-        if target.append_transaction(key, record, expected_head, new_head):
+        if ledger_store.transact(target, key, record, expected_head, new_head):
             return record
-    raise SystemExit("REPO_LEDGER_APPEND_CONTENTION_EXHAUSTED")
+    # Every comparison was lost and nothing was published: a fault in this
+    # ledger's own state, which the caller retries, not a refusal of the receipt.
+    raise ledger_store.LedgerWriteFailed("LEDGER_APPEND_LOST_COMPARISON", "REPO_LEDGER_APPEND_CONTENTION_EXHAUSTED")
 
 
 def main():
@@ -218,6 +220,9 @@ def main():
         raise SystemExit(1)
     except RepoLedgerEpochRefused as exc:
         print(json.dumps(exc.refusal, sort_keys=True))
+        raise SystemExit(1)
+    except (ledger_store.LedgerWriteFailed, OSError) as exc:
+        print(json.dumps(kernel.own_state_write_refusal(exc, EPOCH_RETRY_ENTRYPOINT), sort_keys=True))
         raise SystemExit(1)
     print(json.dumps(record, sort_keys=True))
 

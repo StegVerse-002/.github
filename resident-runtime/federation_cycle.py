@@ -32,6 +32,8 @@ def cycle(hb_epoch:int, *, gateway:bool)->dict:
     results=K.consume_and_respond(ROOT,hb_epoch=hb_epoch)
     consumed=sum(1 for x in results if (x.get("result") or {}).get("status")=="CONSUMED")
     refused=sum(1 for x in results if (x.get("result") or {}).get("status")=="REFUSED_QUARANTINED")
+    # Left for a later cycle: no epoch for it here (§Q), or this repository's own state was not writable.
+    pending=sum(1 for x in results if str((x.get("result") or {}).get("status","")).startswith("PENDING_"))
     responses=sum(1 for x in results if x.get("response_publication"))
     return {
       "schema_version":"stegverse.org-federation-cycle.v1",
@@ -40,6 +42,7 @@ def cycle(hb_epoch:int, *, gateway:bool)->dict:
       "frames_seen":len(results),
       "frames_consumed":consumed,
       "frames_refused_quarantined":refused,
+      "frames_pending":pending,
       "responses_emitted":responses,
       "authority_effect":"NONE_CARRIER_ONLY",
       "transport":"LOCAL_SPOOL_FALLBACK"

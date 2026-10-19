@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ledger_store import HEAD_KEY, RECEIPT_PREFIX, SOURCE_PREFIX, open_store, parse_locator, receipt_key, source_key  # noqa: E402
+from ledger_store import HEAD_KEY, RECEIPT_PREFIX, SOURCE_PREFIX, LedgerWriteFailed, open_store, parse_locator, receipt_key, source_key, transact  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 C = json.loads((ROOT / ".stegverse/transition-ledger/org-contract.json").read_text())
@@ -212,9 +212,11 @@ def append(source_receipt, org_transition_class, predecessor_state, successor_st
             "receipt_sha256": digest,
             "receipt_path": target.locator(key),
         }
-        if target.append_transaction(key, record, expected_head, new_head, immutable=retained):
+        if transact(target, key, record, expected_head, new_head, immutable=retained):
             return record
-    raise SystemExit("ORG_LEDGER_APPEND_CONTENTION_EXHAUSTED")
+    # Every comparison was lost and nothing was published: a fault in this
+    # ledger's own state, which the caller retries, not a refusal of the receipt.
+    raise LedgerWriteFailed("LEDGER_APPEND_LOST_COMPARISON", "ORG_LEDGER_APPEND_CONTENTION_EXHAUSTED")
 
 
 def main():
@@ -236,6 +238,9 @@ def main():
             args.authority_effect, hb_epoch=args.hb_epoch)
     except OrgLedgerEpochRefused as exc:
         print(json.dumps(exc.refusal, sort_keys=True))
+        raise SystemExit(1)
+    except (LedgerWriteFailed, OSError) as exc:
+        print(json.dumps(kernel.own_state_write_refusal(exc, EPOCH_RETRY_ENTRYPOINT), sort_keys=True))
         raise SystemExit(1)
     print(json.dumps(record, sort_keys=True))
 

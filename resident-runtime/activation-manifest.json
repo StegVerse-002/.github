@@ -92,14 +92,17 @@
       "fallback": "the caller's hb_epoch= (a cycle's epoch) for a frame that lends none",
       "dispatcher": ".github/workflows/resident-federation-cycle.yml",
       "reached_from": "resident-runtime/federation_cycle.py"
-    }
-  },
-  "epoch_free_entrypoints": {
+    },
     "resident-runtime/ecosystem_control.py": {
-      "requires_hb_epoch": false,
+      "requires_hb_epoch": true,
+      "reason": "status stamps the status heartbeat and send-monitor/send-work/send-message stamp the frames they publish; collect only reads and takes none",
+      "from": "dispatch_input",
+      "input": "hb_epoch",
       "dispatcher": ".github/workflows/resident-federation-cycle.yml",
-      "invoked_as": "status",
-      "reason": "an operator CLI; status reads the resident registry and takes no epoch"
+      "argument": "--hb-epoch",
+      "supplied_by": ".github/workflows/resident-federation-cycle.yml",
+      "invoked_as": "--hb-epoch \"$HB_EPOCH\" status",
+      "epoch_free_commands": ["collect"]
     }
   }
 }

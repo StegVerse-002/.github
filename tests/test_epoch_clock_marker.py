@@ -312,7 +312,10 @@ class ConsumeAndRespond(ConsumingRoutes):
         self.assertEqual(result["result"]["status"], "PENDING_EPOCH_NOT_SUPPLIED")
         self.assertIsNone(result["seen_marker"])
         self.assertEqual([frame["destination_org"] for frame in self.frames()], [THIS])
+        # §Q: 0 files, with no seen or quarantine marker and no intake.
         self.assertFalse((self.root / "resident-runtime/federation/seen.d").exists())
+        self.assertFalse((self.root / "resident-runtime/control").exists())
+        self.assertNoLedger()
         # With the cycle's epoch: the same frame is answered at that epoch, never at the clock's.
         result, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
         self.assertEqual(result["result"]["status"], "CONSUMED")
@@ -757,8 +760,8 @@ class MalformedClockFrames(ConsumingRoutes):
         self.assertNoLedger()
 
 
-class OneBadFrameNeverStopsTheCycle(ConsumingRoutes):
-    """B-P36o: any error ingesting one frame is that frame's six-field refusal and quarantine."""
+class BadFrames(ConsumingRoutes):
+    """Writers of broken frames, offered ahead of the valid one."""
 
     def write_first(self, name, frame):
         # "0-" sorts before every hex frame name, so these are offered before the valid one.
@@ -776,6 +779,10 @@ class OneBadFrameNeverStopsTheCycle(ConsumingRoutes):
                                      destination_org=THIS, destination_service=service, payload=payload,
                                      packet_id=packet_id)
         return self.K.carrier_frame(packet, now_ns=self.K.epoch_now_ns(SUPPLIED))
+
+
+class OneBadFrameNeverStopsTheCycle(BadFrames):
+    """B-P36o: any error ingesting one frame is that frame's six-field refusal and quarantine."""
 
     maxDiff = None
 
@@ -821,6 +828,242 @@ class OneBadFrameNeverStopsTheCycle(ConsumingRoutes):
         self.assertAllSupplied()
         # A second cycle offers none of the bad frames again.
         self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
+
+
+class WrongTypedFields(BadFrames):
+    """F-TYPE: the per-frame guard is total. A wrong-typed field is that frame's refusal, before or after a valid one."""
+
+    def write_last(self, name, frame):
+        # "z-" sorts after every hex frame name, so these are offered after the valid one.
+        directory = self.mesh / "frames.d"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / ("z-" + name + ".json")).write_text(json.dumps(frame))
+
+    def retyped(self, field, value, packet_id):
+        base = self.supplied_frame(THIS.lower() + ".intr-destination", diagnostic(packet_id), packet_id)
+        body = {key: item for key, item in base.items() if key != "frame_sha256"}
+        body[field] = value
+        # Re-hashed, so the carrier hash holds and the wrong type reaches the decode.
+        return {**body, "frame_sha256": self.K.sha(body)}
+
+    def test_wrong_typed_fields_are_quarantined_and_the_valid_frame_is_ledgered(self):
+        wrong = {"int": 123, "null": None, "list": ["a"], "dict": {"a": 1}}
+        for index, (label, value) in enumerate(wrong.items()):
+            write = self.write_first if index % 2 == 0 else self.write_last
+            write("b64-" + label, self.retyped("packet_base64", value, "b64-" + label))
+        self.write_last("hb-list", self.retyped("heartbeat_reference", [SUPPLIED], "hb-list"))
+        self.write_first("sha-int", self.retyped("packet_sha256", 123, "sha-int"))
+        self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("typed-good"), "typed-good",
+                             epoch=SUPPLIED)
+        reads = self.clock_reads()
+        results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        rows = {row["result"].get("packet_id") or row["result"]["packet"]["packet_id"]: row["result"]
+                for row in results}
+        self.assertEqual(rows.pop("typed-good")["status"], "CONSUMED")
+        self.assertEqual(set(rows), {"b64-int", "b64-null", "b64-list", "b64-dict", "hb-list", "sha-int"})
+        for packet_id, result in rows.items():
+            with self.subTest(frame=packet_id):
+                self.assertEqual(result["status"], "REFUSED_QUARANTINED")
+                self.assertRefusal(result["refusal"], result["refusal"]["failure_code"])
+        for label in wrong:
+            refusal = rows["b64-" + label]["refusal"]
+            self.assertEqual(refusal["failure_code"], "FRAME_INGEST_FAILED")
+            self.assertIn(refusal["failed_predicate"], {"AttributeError", "TypeError"})
+        repository = [r for r in self.receipts() if r["schema"] == "stegverse.repo-transition-receipt/v1"]
+        self.assertEqual({r["evidence"]["communication_id"] for r in repository}, {"typed-good"})
+        self.assertAllSupplied()
+        self.assertEqual(self.clock_reads(), reads)
+        self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
+
+    def test_the_gateway_blocks_a_wrong_typed_frame(self):
+        gateway = _load("marker_gateway_typed", self.root, "resident-runtime/federation_gateway_transport.py")
+        acknowledged = []
+        with mock.patch.object(gateway, "fetch_frame", return_value={
+                    "state": "FRAME_AVAILABLE", "frame": self.retyped("packet_base64", 123, "gw-typed")}), \
+                mock.patch.object(gateway, "_json_request", side_effect=lambda method, path, body=None, headers=None:
+                                  acknowledged.append(body) or {"state": "ACKNOWLEDGED"}):
+            result = gateway.resident_gateway_cycle(self.root, hb_epoch=SUPPLIED)
+        self.assertEqual(result["state"], "REFUSED_QUARANTINED")
+        self.assertEqual(result["refusal"]["failure_code"], "FRAME_INGEST_FAILED")
+        self.assertEqual([value["state"] for value in acknowledged], ["BLOCKED"])
+        self.assertNoLedger()
+
+
+class OwnStateWriteFaults(ConsumingRoutes):
+    """F-TRANSIENT-RT: a fault writing this repository's own state leaves the frame pending, never terminal."""
+
+    def failing_replace(self, target, error):
+        real = os.replace
+
+        def replace(source, destination, *args, **kwargs):
+            if target(Path(destination)):
+                raise error
+            return real(source, destination, *args, **kwargs)
+        return mock.patch.object(os, "replace", replace)
+
+    def chain(self, root):
+        return sorted(path.name for path in root.glob("receipts/*.json")) if root.exists() else []
+
+    def assertPendingNoMarker(self, results, predicate):
+        result, = results
+        self.assertEqual(result["result"]["status"], "PENDING_DISPATCH_IO_FAILED")
+        refusal = result["result"]["refusal"]
+        self.assertRefusal(refusal, "FRAME_DISPATCH_IO_FAILED")
+        self.assertIs(refusal["terminal"], False)
+        self.assertEqual(refusal["failed_predicate"], predicate)
+        self.assertIsNone(result["seen_marker"])
+        self.assertFalse((self.root / "resident-runtime/federation/seen.d").exists())
+
+    def assertConsumedOnce(self):
+        consumed, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertEqual(consumed["result"]["status"], "CONSUMED")
+        self.assertEqual(len(self.chain(self.repo_ledger)), 1)
+        self.assertEqual(len(self.chain(self.org_ledger)), 1)
+        organization, = [r for r in self.receipts() if r["schema"] != "stegverse.repo-transition-receipt/v1"]
+        repository, = [r for r in self.receipts() if r["schema"] == "stegverse.repo-transition-receipt/v1"]
+        self.assertEqual(organization["repo_receipt_sha256"], repository["receipt_sha256"])
+        self.assertAllSupplied()
+        self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
+
+    def publish(self, packet_id):
+        self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic(packet_id), packet_id, epoch=SUPPLIED)
+
+    def test_an_oserror_on_the_repository_ledger_write_leaves_the_frame_pending(self):
+        self.publish("io-repo")
+        reads = self.clock_reads()
+        with self.failing_replace(lambda path: self.repo_ledger in path.parents and path.parent.name == "receipts",
+                                  OSError(28, "No space left on device")):
+            results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertPendingNoMarker(results, "OSError")
+        self.assertEqual(self.chain(self.repo_ledger), [])
+        self.assertEqual(self.chain(self.org_ledger), [])
+        self.assertConsumedOnce()
+        self.assertEqual(self.clock_reads(), reads)
+
+    def test_an_oserror_on_the_organization_head_leaves_no_orphan_and_lands_once(self):
+        self.publish("io-org-head")
+        with self.failing_replace(lambda path: path == self.org_ledger / "HEAD.json", OSError(5, "I/O error")):
+            results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertPendingNoMarker(results, "OSError")
+        self.assertEqual(len(self.chain(self.repo_ledger)), 1)
+        # The organization receipt written before HEAD failed is rolled back: no orphan.
+        self.assertEqual(self.chain(self.org_ledger), [])
+        self.assertConsumedOnce()
+
+    def test_a_lost_comparison_on_each_append_leaves_the_frame_pending(self):
+        self.publish("lost-comparison")
+        with self.failing_replace(lambda path: path.name == "HEAD.json"
+                                  and (self.repo_ledger in path.parents or self.org_ledger in path.parents),
+                                  RuntimeError("ledger_append_lost_comparison")):
+            results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertPendingNoMarker(results, "LEDGER_APPEND_LOST_COMPARISON")
+        self.assertEqual(self.chain(self.repo_ledger), [])
+        self.assertConsumedOnce()
+
+    def test_exhausted_contention_is_the_writers_dedicated_class_not_a_system_exit(self):
+        emit = _load("marker_emit_losing", self.root, ".stegverse/transition-ledger/emit.py")
+
+        class LosingStore:
+            attempts = 0
+            def initialize(self): pass
+            def get(self, key): return None
+            def locator(self, key): return key
+            def append_transaction(self, *args, **kwargs):
+                LosingStore.attempts += 1
+                return False
+        with self.assertRaises(emit.ledger_store.LedgerWriteFailed) as raised:
+            emit.append("t", "C", "a", "b", {}, hb_epoch=SUPPLIED, store=LosingStore())
+        self.assertEqual(LosingStore.attempts, 128)
+        self.assertEqual(raised.exception.failed_predicate, "LEDGER_APPEND_LOST_COMPARISON")
+        self.assertTrue(self.K.own_state_fault(raised.exception))
+        refusal = self.K.frame_failure_refusal(raised.exception)
+        self.assertEqual(refusal["failure_code"], "FRAME_DISPATCH_IO_FAILED")
+        self.assertIs(refusal["frame_left_pending"], True)
+
+    def test_a_valid_frame_after_a_faulted_one_is_still_consumed(self):
+        self.publish_inbound(THIS.lower() + ".org-control",
+                             {"message_class": "ecosystem.communication", "communication_id": "after-io",
+                              "subject": "s", "body": {}}, "after-io", epoch=SUPPLIED)
+        self.publish("io-first")
+        with self.failing_replace(lambda path: self.repo_ledger in path.parents, OSError(28, "full")):
+            results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        statuses = {row["result"].get("packet_id") or row["result"]["packet"]["packet_id"]: row["result"]["status"]
+                    for row in results}
+        self.assertEqual(statuses, {"io-first": "PENDING_DISPATCH_IO_FAILED", "after-io": "CONSUMED"})
+        self.assertConsumedOnce()
+
+    def test_the_gateway_leaves_a_faulted_frame_unacknowledged(self):
+        gateway = _load("marker_gateway_io", self.root, "resident-runtime/federation_gateway_transport.py")
+        frame = self.K.carrier_frame(self.K.build_packet(
+            origin_org=PEER, origin_service="stegverse-org.org-control", destination_org=THIS,
+            destination_service=THIS.lower() + ".intr-destination", payload=diagnostic("gw-io"),
+            packet_id="gw-io"), now_ns=self.K.epoch_now_ns(SUPPLIED))
+        acknowledged = []
+        patches = (mock.patch.object(gateway, "fetch_frame", return_value={"state": "FRAME_AVAILABLE", "frame": frame}),
+                   mock.patch.object(gateway, "submit_frame", return_value={"state": "STORED"}),
+                   mock.patch.object(gateway, "_json_request", side_effect=lambda method, path, body=None, headers=None:
+                                     acknowledged.append(body) or {"state": "ACKNOWLEDGED"}))
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        with self.failing_replace(lambda path: self.repo_ledger in path.parents, OSError(28, "full")):
+            result = gateway.resident_gateway_cycle(self.root, hb_epoch=SUPPLIED)
+        self.assertEqual(result["state"], "PENDING_DISPATCH_IO_FAILED")
+        self.assertIs(result["refusal"]["terminal"], False)
+        self.assertEqual(acknowledged, [])
+        self.assertEqual(self.chain(self.repo_ledger), [])
+        result = gateway.resident_gateway_cycle(self.root, hb_epoch=SUPPLIED)
+        self.assertEqual(result["state"], "CONSUMED")
+        self.assertEqual([value["state"] for value in acknowledged], ["CONSUMED"])
+        self.assertEqual(len(self.chain(self.repo_ledger)), 1)
+        self.assertEqual(len(self.chain(self.org_ledger)), 1)
+
+
+class EcosystemControlStampsTheSuppliedEpoch(ConsumingRoutes):
+    """EPOCH_FREE is not provable for ecosystem_control: every route that stamps takes the supplied epoch."""
+
+    def run_control(self, *argv):
+        completed = subprocess.run([sys.executable, str(self.root / "resident-runtime/ecosystem_control.py"), *argv],
+                                   capture_output=True, text=True, env=dict(os.environ), check=False)
+        self.assertNotIn("Traceback", completed.stderr)
+        return completed
+
+    def test_status_and_send_refuse_without_an_epoch_and_write_nothing(self):
+        reads = self.clock_reads()
+        for argv in (("status",), ("send-message", "--subject", "s", "--body-json", "{}"),
+                     ("send-monitor", "--subject", "s", "--body-json", "{}"),
+                     ("send-work", "--subject", "s", "--body-json", "{}"),
+                     ("--hb-epoch", "abc", "status")):
+            with self.subTest(argv=argv):
+                completed = self.run_control(*argv)
+                self.assertEqual(completed.returncode, 1)
+                refusal = json.loads(completed.stdout)
+                self.assertRefusal(refusal, "HB_EPOCH_INVALID" if "abc" in argv else "HB_EPOCH_NOT_SUPPLIED")
+        self.assertEqual(self.frames(), [])
+        self.assertEqual(self.clock_reads(), reads)
+
+    def test_status_and_send_stamp_the_supplied_epoch_with_no_clock(self):
+        reads = self.clock_reads()
+        completed = self.run_control("--hb-epoch", str(SUPPLIED), "status")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        reference = json.loads(completed.stdout)["heartbeat_reference"]
+        self.assertEqual(reference["epoch"], SUPPLIED)
+        self.assertIs(reference["derived_from_clock"], False)
+        self.assertNotIn("sampled_unix_ns", reference)
+        completed = self.run_control("--hb-epoch", str(SUPPLIED), "send-message", "--subject", "s", "--body-json", "{}",
+                                     "--communication-id", "control-4096")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        frames = self.frames()
+        self.assertTrue(frames)
+        for frame in frames:
+            self.assertEqual(frame["heartbeat_reference"]["epoch"], SUPPLIED)
+            self.assertIs(frame["heartbeat_reference"]["derived_from_clock"], False)
+            self.assertNotIn("sampled_unix_ns", frame["heartbeat_reference"])
+        # collect only reads, and takes no epoch.
+        completed = self.run_control("collect", "--communication-id", "control-4096")
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(self.clock_reads(), reads)
+        self.assertNoUnmarkedClock()
 
 
 class MalformedFrameFiles(ConsumingRoutes):

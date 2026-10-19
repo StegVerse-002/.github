@@ -43,6 +43,40 @@ RECEIPT_PREFIX = "receipts/"
 SOURCE_PREFIX = "source-receipts/"
 
 
+class LedgerWriteFailed(RuntimeError):
+    """A fault writing this ledger's own state, never a defect of what is appended.
+
+    An I/O error, a lost compare-and-swap that exhausts its retries, or a
+    collision at a content-addressed key. Nothing the chain names was
+    published, so the caller retries the same append and it lands once.
+    `own_state_write_failure` lets a caller that loaded another copy of this
+    module recognize it.
+    """
+    own_state_write_failure = True
+
+    def __init__(self, failed_predicate, detail):
+        super().__init__(failed_predicate + ": " + detail)
+        self.failed_predicate = failed_predicate
+        self.detail = detail
+
+
+def transact(store, receipt_key_name, receipt, expected_head, new_head, immutable=None):
+    """`store.append_transaction`, with any fault in the store raised as `LedgerWriteFailed`."""
+    try:
+        return store.append_transaction(receipt_key_name, receipt, expected_head, new_head,
+                                        immutable=immutable)
+    except LedgerWriteFailed:
+        raise
+    except ValueError as exc:
+        if str(exc) != "ledger_receipt_collision":
+            raise
+        raise LedgerWriteFailed("LEDGER_STORE_COLLISION", str(exc)) from exc
+    except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+        predicate = ("LEDGER_APPEND_LOST_COMPARISON" if "lost_comparison" in str(exc).lower()
+                     or "CONTENTION" in str(exc) else type(exc).__name__)
+        raise LedgerWriteFailed(predicate, type(exc).__name__ + ": " + str(exc)) from exc
+
+
 def receipt_key(digest):
     """Address a receipt by its own digest, so the key carries the content.
 
@@ -297,9 +331,26 @@ class PosixLedgerStore:
                     raise ValueError("ledger_receipt_collision")
                 if existing is None:
                     missing.append(key)
-            for key in missing:
-                self.put(key, documents[key])
-            self.put(HEAD_KEY, new_head)
+            written = []
+            try:
+                for key in missing:
+                    written.append(key)
+                    self.put(key, documents[key])
+                self.put(HEAD_KEY, new_head)
+            except BaseException:
+                # A failed write leaves no receipt HEAD does not name. A HEAD that
+                # was replaced before the failure names them, so they stay.
+                try:
+                    published = self.get(HEAD_KEY) == new_head
+                except Exception:
+                    published = True
+                if not published:
+                    for key in written:
+                        try:
+                            self._path(key).unlink()
+                        except OSError:
+                            pass
+                raise
             return True
 
     @staticmethod

@@ -165,16 +165,17 @@ class ManifestDispatchersInTree(unittest.TestCase):
                 self.assertTrue(dispatcher["repo"].startswith(OTHER_REPO_PREFIX), dispatcher["repo"])
         self.assertEqual(gaps, {"tools/run_self_characterization_principal.py"})
 
-    def test_epoch_free_entrypoints_take_no_epoch_and_are_dispatched_in_tree(self):
+    def test_ecosystem_control_is_bound_and_dispatched_in_tree_with_the_epoch(self):
+        """EPOCH_FREE is not provable for it: status and send-* stamp a heartbeat, so it is bound."""
         declared = set().union(*(declared_paths(document) for document in self.documents.values()))
-        free = self.documents[ACTIVATION].get("epoch_free_entrypoints") or {}
-        self.assertIn("resident-runtime/ecosystem_control.py", free)
-        for path, entry in free.items():
-            with self.subTest(entrypoint=path):
-                self.assertIs(entry["requires_hb_epoch"], False)
-                self.assertFalse(needs_epoch(path, declared))
-                workflow = source_of(entry["dispatcher"])
-                self.assertIn("python3 " + path + " " + entry["invoked_as"], workflow)
+        path = "resident-runtime/ecosystem_control.py"
+        self.assertTrue(needs_epoch(path, declared))
+        self.assertNotIn("epoch_free_entrypoints", self.documents[ACTIVATION])
+        binding = bindings(self.documents)[path]
+        self.assertIs(binding["requires_hb_epoch"], True)
+        workflow = source_of(binding["dispatcher"])
+        self.assertIn("python3 " + path + " " + binding["invoked_as"], workflow)
+        self.assertEqual(binding["invoked_as"], '--hb-epoch "$HB_EPOCH" status')
 
 
 class ManifestEpochBindings(unittest.TestCase):

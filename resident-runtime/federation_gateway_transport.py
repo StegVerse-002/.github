@@ -111,6 +111,7 @@ def publish_ecosystem_via_gateway(
     body: dict[str, Any],
     requested_action: str | None = None,
     communication_id: str | None = None,
+    now_ns: int | None = None,
 ) -> dict[str, Any]:
     registry = K.load_registry(repo_root)
     directory = K.load_federation_directory(repo_root)
@@ -127,7 +128,7 @@ def publish_ecosystem_via_gateway(
     )
     results = []
     for packet in built["packets"]:
-        frame = K.carrier_frame(packet)
+        frame = K.carrier_frame(packet, now_ns=now_ns)
         stored = submit_frame(frame)
         results.append({
             "organization": packet["destination"]["org"],
@@ -202,6 +203,8 @@ def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str
     # A refused frame (CLOCK, CARRIED, invalid) is acknowledged BLOCKED so the
     # gateway never redelivers it: it is terminal and does not stop later cycles.
     frame_epoch, refusal = K.admit_frame(frame, hb_epoch, root=repo_root)
+    if refusal is not None and refusal.get("frame_left_pending"):
+        return _left_pending(organization, frame, refusal)
     if refusal is not None:
         ack = acknowledge_frame(organization, frame, "BLOCKED", hb_epoch=hb_epoch)
         return {
@@ -220,9 +223,12 @@ def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str
     packet = K.recover_packet(frame)
     try:
         result = K.ingest_frame(repo_root, frame, hb_epoch=frame_epoch)
-    except Exception as error:
+    except (Exception, SystemExit) as error:
         # B-P36o: the frame's failure is its refusal; it is acknowledged BLOCKED, not redelivered.
+        # A fault writing this repository's own state is not: the frame is left unacknowledged.
         refusal = K.frame_failure_refusal(error)
+        if refusal.get("frame_left_pending"):
+            return _left_pending(organization, frame, refusal)
         ack = acknowledge_frame(organization, frame, "BLOCKED", hb_epoch=hb_epoch)
         return {
             "schema_version": "stegverse.org-federation-gateway-cycle.v1",
@@ -237,6 +243,36 @@ def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str
             "ack_state": ack.get("state"),
             "gateway_execution_authority": "NONE",
         }
+    try:
+        return _answer(repo_root, registry, organization, frame, packet, frame_epoch, result, hb_epoch)
+    except (Exception, SystemExit) as error:
+        if not (K.own_state_fault(error) or isinstance(error, FederationGatewayTransportError)):
+            raise
+        # The crossing is recorded (a replay returns the same receipts); its answer
+        # or acknowledgement is not, so the frame is left for redelivery.
+        return _left_pending(organization, frame,
+                             K.own_state_write_refusal(error, CYCLE_EPOCH_RETRY_ENTRYPOINT))
+
+
+def _left_pending(organization: str, frame: dict[str, Any], refusal: dict[str, Any]) -> dict[str, Any]:
+    """No acknowledgement, so the gateway redelivers the frame to a later cycle."""
+    return {
+        "schema_version": "stegverse.org-federation-gateway-cycle.v1",
+        "organization": organization,
+        "state": "PENDING_DISPATCH_IO_FAILED" if refusal.get("failure_code") == K.FRAME_DISPATCH_IO_FAILED
+                 else "PENDING_EPOCH_NOT_SUPPLIED",
+        "packet_id": frame.get("packet_id"),
+        "frame_sha256": frame.get("frame_sha256"),
+        "refusal": refusal,
+        "frames_consumed": 0,
+        "responses_emitted": 0,
+        "ack_state": None,
+        "gateway_execution_authority": "NONE",
+    }
+
+
+def _answer(repo_root: Path, registry: dict[str, Any], organization: str, frame: dict[str, Any],
+            packet: dict[str, Any], frame_epoch: int | None, result: dict[str, Any], hb_epoch: int) -> dict[str, Any]:
     response_emitted = 0
     response_ref = None
     if result.get("status") == "CONSUMED":
