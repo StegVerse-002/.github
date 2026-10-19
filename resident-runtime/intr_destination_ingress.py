@@ -78,6 +78,7 @@ def _module(name: str, relative: str):
 repository_ledger = _module("repo_transition_emit", ".stegverse/transition-ledger/emit.py")
 organization_ledger = _module("aggregate_repo_transition",
                               "resident-runtime/aggregate_repo_transition.py")
+kernel = repository_ledger.kernel
 
 
 def canon(value: Any) -> bytes:
@@ -242,7 +243,8 @@ def receive(payload: Any, *, registry: Mapping[str, Any], standing: Mapping[str,
     carry standing, and a diagnostic does not leave, so neither is used.
     """
     del standing, mesh_root
-    hb_epoch = _supplied_epoch(hb_epoch)
+    hb_epoch = kernel.supplied_epoch(_supplied_epoch(hb_epoch),
+                                     retry_entrypoint=RECEIVE_EPOCH_RETRY_ENTRYPOINT)
     if not isinstance(registry, Mapping):
         return _recorded(DENY, payload, packet_id, hb_epoch,
                          failed_predicate="CAPABILITY_MAP_IS_A_MAPPING",
@@ -262,11 +264,18 @@ SELF_CLOSURE_SCHEMA = "stegverse.org-intr-destination-self-closure/v1"
 SUPPLIED_EPOCH_ENV = "STEGVERSE_HB_EPOCH"
 
 
-def _supplied_epoch(hb_epoch: int | None) -> int | None:
+RECEIVE_EPOCH_RETRY_ENTRYPOINT = ("resident-runtime/intr_destination_ingress.py::receive "
+                                  "(hb_epoch=, --hb-epoch, or " + SUPPLIED_EPOCH_ENV + ")")
+SELF_CLOSURE_EPOCH_RETRY_ENTRYPOINT = ("resident-runtime/intr_destination_ingress.py::"
+                                       "diagnostic_self_closure (hb_epoch=, or --hb-epoch)")
+
+
+def _supplied_epoch(hb_epoch: Any) -> Any:
+    """The caller's epoch, else the environment's raw text. The shared rule judges it."""
     if hb_epoch is not None:
         return hb_epoch
-    value = os.environ.get(SUPPLIED_EPOCH_ENV, "")
-    return int(value) if value.isdigit() else None
+    value = os.environ.get(SUPPLIED_EPOCH_ENV)
+    return None if value == "" else value
 
 
 def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
@@ -298,6 +307,7 @@ def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
         }
     egress = _module("egress_self_closure", "resident-runtime/organization_egress_boundary.py")
     kernel_mod = _module("kernel_self_closure", "org-kernel/kernel.py")
+    hb_epoch = kernel_mod.supplied_epoch(hb_epoch, retry_entrypoint=SELF_CLOSURE_EPOCH_RETRY_ENTRYPOINT)
     origin = kernel_mod.load_registry(ROOT)["organization"]
     payload = {
         "message_class": COMMUNICATION_CLASS,
@@ -340,8 +350,7 @@ def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
     # The kernel's dispatch does not carry an epoch to the receiving operation,
     # so the supplied one travels with this process for the consume only.
     previous_epoch = os.environ.get(SUPPLIED_EPOCH_ENV)
-    if hb_epoch is not None:
-        os.environ[SUPPLIED_EPOCH_ENV] = str(hb_epoch)
+    os.environ[SUPPLIED_EPOCH_ENV] = str(hb_epoch)
     try:
         consumed_frames = kernel_mod.consume_addressed_frames(ROOT, mesh_root=mesh_root)
     finally:
@@ -364,10 +373,8 @@ def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
         result["detail"] = operation.get("detail")
         return result
     response = kernel_mod.build_control_response(consumed["packet"], execution)
-    now_ns = None
-    if hb_epoch is not None:
-        now_ns = (kernel_mod.HB_ANCHOR_UNIX_NS
-                  + (hb_epoch - kernel_mod.HB_ANCHOR_EPOCH) * kernel_mod.HB_PERIOD_NS)
+    now_ns = (kernel_mod.HB_ANCHOR_UNIX_NS
+              + (hb_epoch - kernel_mod.HB_ANCHOR_EPOCH) * kernel_mod.HB_PERIOD_NS)
     kernel_mod.publish_packet(response, root=mesh_root, now_ns=now_ns)
     closed = egress.close(
         origin, emitted["packet_id"], communication_id, root=ROOT,
@@ -393,21 +400,30 @@ def main() -> int:
     parser.add_argument("--payload", type=Path, default=None)
     parser.add_argument("--registry", type=Path, default=None)
     parser.add_argument("--packet-id", default="organization-intr-destination")
-    parser.add_argument("--hb-epoch", type=int, default=None)
+    # The raw text goes to the shared epoch rule: argparse's int() would take
+    # "+33", " 33" or fullwidth digits as 33.
+    parser.add_argument("--hb-epoch", default=None)
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
-    if args.self_closure:
-        if args.mesh_root is None or args.communication_id is None:
-            raise SystemExit("self-closure requires --communication-id and --mesh-root")
-        result = diagnostic_self_closure(
-            args.communication_id, mesh_root=args.mesh_root, hb_epoch=args.hb_epoch)
-    else:
-        if args.payload is None or args.registry is None:
-            raise SystemExit("receive requires --payload and --registry")
-        result = receive(
-            json.loads(args.payload.read_text(encoding="utf-8")),
-            registry=json.loads(args.registry.read_text(encoding="utf-8")),
-            packet_id=args.packet_id, hb_epoch=args.hb_epoch)
+    try:
+        if args.self_closure:
+            if args.mesh_root is None or args.communication_id is None:
+                raise SystemExit("self-closure requires --communication-id and --mesh-root")
+            result = diagnostic_self_closure(
+                args.communication_id, mesh_root=args.mesh_root, hb_epoch=args.hb_epoch)
+        else:
+            if args.payload is None or args.registry is None:
+                raise SystemExit("receive requires --payload and --registry")
+            result = receive(
+                json.loads(args.payload.read_text(encoding="utf-8")),
+                registry=json.loads(args.registry.read_text(encoding="utf-8")),
+                packet_id=args.packet_id, hb_epoch=args.hb_epoch)
+    except ValueError as exc:
+        # Each loaded kernel has its own SuppliedEpochRefused class.
+        if not isinstance(getattr(exc, "refusal", None), dict):
+            raise
+        print(json.dumps(exc.refusal, sort_keys=True))
+        return 1
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

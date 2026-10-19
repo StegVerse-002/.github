@@ -385,6 +385,7 @@ def _refusal_result(record: Mapping[str, Any], appended: Mapping[str, Any]) -> d
 
 
 EMIT_EPOCH_RETRY_ENTRYPOINT = "resident-runtime/organization_egress_boundary.py::emit (hb_epoch=, or --hb-epoch)"
+CLOSE_EPOCH_RETRY_ENTRYPOINT = "resident-runtime/organization_egress_boundary.py::close (hb_epoch=, or --hb-epoch)"
 
 
 def emit(destination_organization: Any, payload: Mapping[str, Any], *,
@@ -532,6 +533,8 @@ def close(destination_organization: str, packet_id: str, communication_id: str, 
           root: Path | None = None, mesh_root: Path | None = None,
           hb_epoch: int | None = None) -> dict[str, Any]:
     """Observe a far-side answer. No answer is ``PENDING`` and writes nothing."""
+    if hb_epoch is not None:
+        hb_epoch = kernel.supplied_epoch(hb_epoch, retry_entrypoint=CLOSE_EPOCH_RETRY_ENTRYPOINT)
     origin = this_organization(root)
     resolved = resolve_destination(destination_organization, root=root)
     collected = kernel.collect_ecosystem_responses(origin, communication_id, mesh_root=mesh_root)
@@ -591,7 +594,9 @@ def main() -> int:
     parser.add_argument("--payload", type=Path)
     parser.add_argument("--standing", type=Path)
     parser.add_argument("--transition-reference", default="ecosystem.transition.interorg.v1")
-    parser.add_argument("--hb-epoch", type=int, default=None)
+    # The raw text goes to the shared epoch rule: argparse's int() would take
+    # "+33", " 33" or fullwidth digits as 33.
+    parser.add_argument("--hb-epoch", default=None)
     parser.add_argument("--close", action="store_true")
     parser.add_argument("--packet-id")
     parser.add_argument("--communication-id")
@@ -599,19 +604,26 @@ def main() -> int:
     parser.add_argument("--mesh-root", type=Path)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
-    if args.close:
-        if not args.packet_id or not args.communication_id:
-            raise SystemExit("--close requires --packet-id and --communication-id")
-        result = close(args.destination_organization, args.packet_id, args.communication_id,
-                       mesh_root=args.mesh_root, hb_epoch=args.hb_epoch)
-    else:
-        if args.payload is None or args.standing is None:
-            raise SystemExit("emit requires --payload and --standing")
-        standing = json.loads(args.standing.read_text(encoding="utf-8"))
-        payload = json.loads(args.payload.read_text(encoding="utf-8"))
-        result = emit(args.destination_organization, payload, standing=standing,
-                      capability=args.capability, transition_reference=args.transition_reference,
-                      mesh_root=args.mesh_root, hb_epoch=args.hb_epoch)
+    try:
+        if args.close:
+            if not args.packet_id or not args.communication_id:
+                raise SystemExit("--close requires --packet-id and --communication-id")
+            result = close(args.destination_organization, args.packet_id, args.communication_id,
+                           mesh_root=args.mesh_root, hb_epoch=args.hb_epoch)
+        else:
+            if args.payload is None or args.standing is None:
+                raise SystemExit("emit requires --payload and --standing")
+            standing = json.loads(args.standing.read_text(encoding="utf-8"))
+            payload = json.loads(args.payload.read_text(encoding="utf-8"))
+            result = emit(args.destination_organization, payload, standing=standing,
+                          capability=args.capability, transition_reference=args.transition_reference,
+                          mesh_root=args.mesh_root, hb_epoch=args.hb_epoch)
+    except ValueError as exc:
+        # Each loaded kernel has its own SuppliedEpochRefused class.
+        if not isinstance(getattr(exc, "refusal", None), dict):
+            raise
+        print(json.dumps(exc.refusal, sort_keys=True))
+        return 1
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

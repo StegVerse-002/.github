@@ -189,7 +189,9 @@ def main():
     parser.add_argument("--successor-org-state-sha256", required=True)
     parser.add_argument("--boundary-evidence-json", default="{}")
     parser.add_argument("--authority-effect", default="NONE")
-    parser.add_argument("--hb-epoch", type=int, default=None)
+    # The raw text goes to the shared epoch rule: argparse's int() would take
+    # "+33", " 33" or fullwidth digits as 33.
+    parser.add_argument("--hb-epoch", default=None)
     args = parser.parse_args()
     try:
         record = append(
