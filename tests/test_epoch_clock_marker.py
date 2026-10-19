@@ -193,7 +193,8 @@ class ConsumingRoutes(unittest.TestCase):
         reference = frame["heartbeat_reference"]
         if epoch is None:
             self.assertEqual(reference["epoch"], CLOCK_EPOCH)
-            self.assertIs(reference["derived_from_clock"], True)
+            # Legacy CLOCK form: the kernel default is WU-B13 slice b's to mark.
+            self.assertNotIn("derived_from_clock", reference)
             self.assertIn("sampled_unix_ns", reference)
         else:
             self.assertEqual(reference["epoch"], epoch)
@@ -466,7 +467,7 @@ class IngestByRole(ConsumingRoutes):
 
 
 class HeartbeatMarkers(ConsumingRoutes):
-    """SUPPLIED is derived_from_clock false with no sample; CLOCK is derived_from_clock true."""
+    """SUPPLIED is derived_from_clock false with no sample; the clock default keeps its legacy form."""
 
     def test_a_supplied_epoch_is_marked_supplied_and_reads_no_clock(self):
         reads = self.clock_reads()
@@ -481,13 +482,16 @@ class HeartbeatMarkers(ConsumingRoutes):
             self.assertNotIn("sampled_unix_ns", value)
         self.assertEqual(self.K.frame_epoch(frame), SUPPLIED)
 
-    def test_the_clock_path_is_marked_clock(self):
+    def test_the_clock_default_keeps_its_legacy_clock_form_and_is_never_taken_as_supplied(self):
+        # CLOCK_MARKER_LEGACY_FORM_IN_KERNEL_DEFAULT: marking this branch is WU-B13 slice b's.
         reads = self.clock_reads()
         reference = self.K.hb_reference()
         self.assertEqual(self.clock_reads(), reads + 1)
         self.assertEqual(reference["epoch"], CLOCK_EPOCH)
-        self.assertIs(reference["derived_from_clock"], True)
+        self.assertNotIn("derived_from_clock", reference)
         self.assertIn("sampled_unix_ns", reference)
+        self.assertRefusal(self.K.writer_epoch_refusal(reference, retry_entrypoint="probe"),
+                           "HB_EPOCH_PROVENANCE_UNMARKED")
         packet = self.K.build_packet(origin_org=PEER, origin_service="p", destination_org=THIS,
                                      destination_service="s", payload={})
         self.assertIsNone(self.K.frame_epoch(self.K.carrier_frame(packet)))

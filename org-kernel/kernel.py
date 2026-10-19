@@ -27,14 +27,15 @@ def sha(v:Any)->str:
     return "sha256:"+hashlib.sha256(bytes(raw)).hexdigest()
 
 def hb_reference(now_ns:int|None=None)->dict[str,Any]:
-    """A heartbeat reference, marked with where its time came from.
+    """A heartbeat reference.
 
     A caller's ``now_ns`` (a supplied epoch's sample time) is SUPPLIED:
     ``derived_from_clock`` false and no ``sampled_unix_ns``. With none, the
-    clock is read: ``derived_from_clock`` true, with the sample it took.
+    clock is read and the reference keeps its legacy CLOCK form, the sample it
+    took and no flag; that default is WU-B13 slice b's to mark.
     """
-    derived_from_clock=now_ns is None
-    if derived_from_clock:
+    supplied=now_ns is not None
+    if not supplied:
         now_ns=int(datetime.now(timezone.utc).timestamp()*1_000_000_000)
     if now_ns<HB_ANCHOR_UNIX_NS:
         raise ValueError("sample_precedes_hb32_anchor")
@@ -42,8 +43,10 @@ def hb_reference(now_ns:int|None=None)->dict[str,Any]:
     epoch=HB_ANCHOR_EPOCH+q
     reference={"epoch":epoch,"generation":epoch,"heartbeat_id":f"HB:{epoch}",
                "phase_offset_ns":phase,"frequency_hz":HB_HZ,"progression_dependency":"OSCILLATOR_ONLY",
-               "authority_effect":"NONE","derived_from_clock":derived_from_clock}
-    if derived_from_clock:
+               "authority_effect":"NONE"}
+    if supplied:
+        reference["derived_from_clock"]=False
+    else:
         reference["sampled_unix_ns"]=now_ns
     return reference
 
