@@ -1715,6 +1715,18 @@ class ProcessBoundaryExitSplit(ConsumingRoutes):
         self.assertEqual(json.loads(marker.read_text())["failure_code"], "FRAME_REFUSED_QUARANTINED")
         self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
 
+    def test_any_other_non_zero_exit_quarantines_the_frame_terminally(self):
+        """Only 75 is non-terminal: 1, 2 and an unknown status are terminal with the marker."""
+        for status in (1, 2, 3):
+            with self.subTest(exit_status=status):
+                self.capability_frame(f"pb-{status}")
+                with self.boundary_exits(status):
+                    refused, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+                self.assertEqual(refused["result"]["status"], "REFUSED_QUARANTINED")
+                self.assertRefusal(refused["result"]["refusal"], "FRAME_INGEST_FAILED")
+                self.assertIsNotNone(refused["seen_marker"])
+                self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
+
     def test_process_boundary_exits_65_on_bad_input(self):
         bad = self.work / "bad.json"
         bad.write_text("{not json")
