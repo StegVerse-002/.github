@@ -1494,6 +1494,10 @@ class WriterEntrypointsNeverTrace(ConsumingRoutes):
             ("control, body not JSON", "resident-runtime/ecosystem_control.py",
              ("--hb-epoch", str(SUPPLIED), "send-message", "--subject", "s", "--body-json", "{not json"),
              "ENTRYPOINT_INPUT_REFUSED", 2),
+            # The generic fallback: a bad input found inside the writer, not by the input reader.
+            ("handoff, no artifact set", "resident-runtime/submit_sv002_self_characterization_to_master_records.py",
+             ("--state-root", str(self.work / "no-state-root"), "--hb-epoch", str(SUPPLIED)),
+             "ENTRYPOINT_INPUT_REFUSED", 2),
         )
         for label, relative, argv, code, status in cases:
             with self.subTest(case=label):
@@ -1501,7 +1505,10 @@ class WriterEntrypointsNeverTrace(ConsumingRoutes):
                     "STEGVERSE_ORG_FEDERATION_ROOT": str(self.work / "empty-mesh")})
                 self.assertNotIn("Traceback", completed.stderr)
                 self.assertEqual(completed.returncode, status, completed.stdout + completed.stderr)
-                self.assertRefusal(json.loads(completed.stdout.strip().splitlines()[-1]), code)
+                refusal = json.loads(completed.stdout.strip().splitlines()[-1])
+                self.assertRefusal(refusal, code)
+                # A write fault is non-terminal; bad input is terminal.
+                self.assertIs(refusal["terminal"], code == "ENTRYPOINT_INPUT_REFUSED")
 
     def test_a_bad_input_is_a_terminal_refusal_with_nothing_written(self):
         """F-INPUT-TRACE: every CLI input argument, missing or not JSON, is the caller's fault."""
@@ -1615,6 +1622,50 @@ class CommittedAppendsRetryIdempotently(ConsumingRoutes):
         head = json.loads((self.org_ledger / "HEAD.json").read_text())
         self.assertEqual(recorded["receipt_sha256"], head["receipt_sha256"])
         self.assertEqual(len(list((self.org_ledger / "receipts").glob("*.json"))), 1)
+
+
+class ResidentExecutorRoutesRefuseBeforeWriting(ConsumingRoutes):
+    """Every in-tree route into the resident executor refuses six-field with no epoch, before any write.
+
+    Routes: the systemd unit (ExecStart) runs resident_executor.py, which runs the
+    declared callable publisher invoke_sv002_experiment_rerun.py and then
+    federation_cycle.py. No other in-tree code calls either.
+    """
+
+    HOSTED = ("GITHUB_ACTIONS", "CI", "RENDER", "VERCEL", "CF_PAGES", "CLOUDFLARE_WORKERS")
+
+    def run_route(self, relative, *argv):
+        environment = {key: value for key, value in os.environ.items() if key not in self.HOSTED}
+        return subprocess.run([sys.executable, str(self.root / relative), *argv], capture_output=True, text=True,
+                              env=environment, check=False, timeout=300)
+
+    def assertNothingWritten(self):
+        self.assertFalse((self.root / "resident-runtime/state").exists())
+        self.assertFalse(self.self_char.exists())
+        self.assertFalse(self.mesh.exists())
+        self.assertNoLedger()
+
+    def test_each_route_without_an_epoch_refuses_six_field_and_writes_nothing(self):
+        reads = self.clock_reads()
+        for relative, argv in (("resident-runtime/resident_executor.py", ("--once",)),
+                               ("resident-runtime/invoke_sv002_experiment_rerun.py", ()),
+                               ("resident-runtime/federation_cycle.py", ())):
+            with self.subTest(route=relative):
+                completed = self.run_route(relative, *argv)
+                self.assertNotIn("Traceback", completed.stderr)
+                self.assertEqual(completed.returncode, 1, completed.stdout + completed.stderr)
+                self.assertRefusal(json.loads(completed.stdout.strip().splitlines()[-1]), "HB_EPOCH_NOT_SUPPLIED")
+                self.assertNothingWritten()
+        self.assertEqual(self.clock_reads(), reads)
+
+    def test_with_an_epoch_the_executor_stamps_from_it_and_reads_no_clock(self):
+        reads = self.clock_reads()
+        completed = self.run_route("resident-runtime/resident_executor.py", "--once", "--hb-epoch", str(SUPPLIED))
+        self.assertNotIn("Traceback", completed.stderr)
+        heartbeat = json.loads((self.root / "resident-runtime/state/resident-executor.latest.json").read_text())
+        self.assertEqual(heartbeat["observed_at"], f"hb-epoch:{SUPPLIED}")
+        self.assertEqual(self.clock_reads(), reads)
+        self.assertNoUnmarkedClock()
 
 
 class EcosystemControlStampsTheSuppliedEpoch(ConsumingRoutes):
