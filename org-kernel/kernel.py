@@ -290,7 +290,11 @@ def dispatch(root:Path, packet:dict[str,Any], *, mesh_root:Path|None=None,
                 raise ProcessBoundaryInputFault((completed.stdout or completed.stderr)[-512:])
             if completed.returncode!=0 or not out.is_file():
                 raise ValueError("endpoint_adapter_execution_failed:"+completed.stderr[-512:])
-            result=json.loads(out.read_text())
+            try:
+                result=json.loads(out.read_text())
+            except JSON_PARSE_ERRORS as error:
+                # F-SCAN-RECURSION: a result nested past the parser's depth is invalid, not a crash.
+                raise ValueError("endpoint_adapter_result_invalid: "+type(error).__name__) from None
             if not isinstance(result,dict): raise ValueError("endpoint_adapter_result_invalid")
             return result
     if role not in {"BOUNDARY_LOCAL_DIAGNOSTIC","BOUNDARY_LOCAL_CONTROL",CAPABILITY_INGRESS_ROLE}:
@@ -477,6 +481,11 @@ def _expect(value:Any, expect:type|None, argument:str, retry_entrypoint:str)->An
                                          argument,retry_entrypoint))
     return value
 
+#: What parsing untrusted JSON can raise. A document nested past the parser's
+#: depth raises RecursionError, and a huge one MemoryError; neither is a
+#: ValueError, so each guard names all three (F-SCAN-RECURSION).
+JSON_PARSE_ERRORS=(ValueError,RecursionError,MemoryError)
+
 def read_json_input(path:Any, *, argument:str, retry_entrypoint:str, expect:type|None=dict)->Any:
     """Read a CLI input file before anything is written, outside the own-state fault classifier.
 
@@ -486,7 +495,7 @@ def read_json_input(path:Any, *, argument:str, retry_entrypoint:str, expect:type
     """
     try:
         value=json.loads(Path(path).read_bytes().decode("utf-8"))
-    except (OSError,UnicodeDecodeError,ValueError) as error:
+    except (OSError,UnicodeDecodeError)+JSON_PARSE_ERRORS as error:
         raise InputRefused(input_refusal(error,argument,retry_entrypoint)) from None
     return _expect(value,expect,argument,retry_entrypoint)
 
@@ -494,7 +503,7 @@ def parse_json_input(text:Any, *, argument:str, retry_entrypoint:str, expect:typ
     """``read_json_input`` for a JSON argument given inline."""
     try:
         value=json.loads(text)
-    except (TypeError,ValueError) as error:
+    except (TypeError,)+JSON_PARSE_ERRORS as error:
         raise InputRefused(input_refusal(error,argument,retry_entrypoint)) from None
     return _expect(value,expect,argument,retry_entrypoint)
 
@@ -721,7 +730,9 @@ def scan_addressed_frames(organization:str, *, root:Path|None=None, seen:set[str
             frame=json.loads(path.read_bytes().decode("utf-8"))
             if not isinstance(frame,dict):
                 raise ValueError("frame_is_not_a_json_object: "+type(frame).__name__)
-        except (OSError,ValueError) as error:
+        except (OSError,)+JSON_PARSE_ERRORS as error:
+            # F-SCAN-RECURSION: a file nested past the parser's depth is one unreadable
+            # file, quarantined by its consumer, never an abort of the whole scan.
             if include_unreadable:
                 out.append({"path":str(path),"frame":None,"unreadable":error})
             continue

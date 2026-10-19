@@ -15,6 +15,12 @@ EPOCH_RETRY_ENTRYPOINT="org-boundary/runtime/process_boundary.py (--hb-epoch, or
 def canon(v): return json.dumps(v,sort_keys=True,separators=(",",":"),ensure_ascii=False,allow_nan=False).encode("utf-8")
 def hid(prefix,v): return prefix+"-"+hashlib.sha256(canon(v)).hexdigest()[:24]
 def load(path): return json.loads(Path(path).read_text())
+def load_result(path):
+    """An endpoint adapter's result. One nested past the parser's depth is invalid, not a crash (F-SCAN-RECURSION)."""
+    try:
+        return load(path)
+    except kernel.JSON_PARSE_ERRORS as error:
+        raise SystemExit("endpoint-adapter-result-invalid: "+type(error).__name__) from None
 def make_receipt(kind, base, previous_receipt_id, *, hb_epoch=None, disposition=None):
     hb_epoch=kernel.supplied_epoch(hb_epoch,retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
     subject={**base,"kind":kind,"previous_receipt_id":previous_receipt_id}
@@ -78,7 +84,7 @@ def resume_live_history(live_path, base):
     for index,line in enumerate(complete):
         try:
             row=json.loads(line)
-        except ValueError:
+        except kernel.JSON_PARSE_ERRORS:
             break
         kind=KINDS[len(rows)] if len(rows)<len(KINDS) else None
         if (not isinstance(row,dict) or kind is None or row.get("kind")!=kind
@@ -170,7 +176,7 @@ def endpoint_result(env,svc,envelope_path):
             )
             if not out.is_file():
                 raise SystemExit("endpoint-adapter-produced-no-result")
-            result=load(out)
+            result=load_result(out)
             result["adapter_returncode"]=completed.returncode
             return result
     if svc.get("boundary_role")=="INTERNAL_ENDPOINT" and adapter:
@@ -182,7 +188,7 @@ def endpoint_result(env,svc,envelope_path):
             )
             if not out.is_file():
                 raise SystemExit("endpoint-adapter-produced-no-result")
-            result=load(out)
+            result=load_result(out)
             result["adapter_returncode"]=completed.returncode
             return result
     if svc.get("boundary_role")=="BOUNDARY_LOCAL_DIAGNOSTIC":

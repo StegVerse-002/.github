@@ -1940,6 +1940,124 @@ class MalformedFrameFiles(ConsumingRoutes):
         self.assertEqual(self.K.collect_ecosystem_responses(THIS, "x", mesh_root=self.mesh)["response_count"], 0)
 
 
+class NestingPastTheParserDepth(ConsumingRoutes):
+    """F-SCAN-RECURSION: JSON nested past the parser's depth (RecursionError) or too large to hold
+    (MemoryError) is one bad input, refused six-field; it never aborts a cycle or traces."""
+
+    run_entrypoint = WriterEntrypointsNeverTrace.run_entrypoint
+
+    DEEP = '{"a":' + "[" * 200000
+
+    def memory_error_for(self, prefix):
+        real = json.loads
+
+        def loads(text, *args, **kwargs):
+            if isinstance(text, str) and text.startswith(prefix):
+                raise MemoryError("probe")
+            return real(text, *args, **kwargs)
+        return mock.patch.object(self.K.json, "loads", loads)
+
+    def test_a_deep_frame_file_is_quarantined_and_the_valid_frame_beside_it_is_consumed_once(self):
+        directory = self.mesh / "frames.d"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "0-a-deep.json").write_text(self.DEEP)
+        (directory / "0-b-memory.json").write_text('{"memory": 1}')
+        self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("after-deep"), "after-deep",
+                             epoch=SUPPLIED)
+        with self.memory_error_for('{"memory"'):
+            results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        by_name = {Path(row["path"]).name: row for row in results}
+        for name, predicate in (("0-a-deep.json", "RecursionError"), ("0-b-memory.json", "MemoryError")):
+            with self.subTest(file=name):
+                row = by_name[name]
+                self.assertEqual(row["result"]["status"], "REFUSED_QUARANTINED")
+                self.assertRefusal(row["result"]["refusal"], "FRAME_INGEST_FAILED")
+                self.assertEqual(row["result"]["refusal"]["failed_predicate"], predicate)
+                marker = json.loads(Path(row["seen_marker"]).read_text())
+                self.assertEqual((marker["frame_name"], marker["failure_code"]), (name, "FRAME_REFUSED_QUARANTINED"))
+        valid = [row["result"] for name, row in by_name.items() if not name.startswith("0-")]
+        self.assertEqual([row["status"] for row in valid], ["CONSUMED"])
+        repository = [r for r in self.receipts() if r["schema"] == "stegverse.repo-transition-receipt/v1"]
+        self.assertEqual([r["evidence"]["communication_id"] for r in repository], ["after-deep"])
+        self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
+
+    def test_the_input_readers_refuse_a_deep_or_oversized_document(self):
+        deep = self.work / "deep.json"
+        deep.write_text(self.DEEP)
+        for label, call in (
+                ("file", lambda: self.K.read_json_input(deep, argument="--in", retry_entrypoint="probe")),
+                ("inline", lambda: self.K.parse_json_input(self.DEEP, argument="--in", retry_entrypoint="probe"))):
+            with self.subTest(reader=label), self.assertRaises(self.K.InputRefused) as raised:
+                call()
+            self.assertRefusal(raised.exception.refusal, "ENTRYPOINT_INPUT_REFUSED")
+            self.assertEqual(raised.exception.refusal["failed_predicate"], "RecursionError")
+            self.assertIs(raised.exception.refusal["terminal"], True)
+        with self.memory_error_for('{"memory"'), self.assertRaises(self.K.InputRefused) as raised:
+            self.K.parse_json_input('{"memory": 1}', argument="--in", retry_entrypoint="probe")
+        self.assertEqual(raised.exception.refusal["failed_predicate"], "MemoryError")
+
+    def test_deep_cli_json_arguments_and_envelopes_are_refused_without_a_trace(self):
+        deep = self.work / "deep.json"
+        deep.write_text(self.DEEP)
+        # An inline argument is capped by the kernel (MAX_ARG_STRLEN), still well past the parser's depth.
+        inline = '{"a":' + "[" * 100000
+        registry = self.root / "org-boundary/registry/services.json"
+        cases = (
+            ("control --body-json", "resident-runtime/ecosystem_control.py",
+             ("--hb-epoch", str(SUPPLIED), "send-message", "--subject", "s", "--body-json", inline), 2),
+            ("emit --evidence-json", ".stegverse/transition-ledger/emit.py",
+             ("--transition-id", "deep", "--transition-class", "PROBE", "--predecessor-state-sha256",
+              "sha256:" + "a" * 64, "--successor-state-sha256", "sha256:" + "b" * 64, "--evidence-json", inline,
+              "--hb-epoch", str(SUPPLIED)), 2),
+            ("receive --payload", "resident-runtime/intr_destination_ingress.py",
+             ("--payload", str(deep), "--registry", str(registry), "--hb-epoch", str(SUPPLIED)), 1),
+            ("process_boundary --envelope", "org-boundary/runtime/process_boundary.py",
+             ("--envelope", str(deep), "--out", str(self.work / "out.json"), "--hb-epoch", str(SUPPLIED)), 65),
+        )
+        for label, relative, argv, status in cases:
+            with self.subTest(case=label):
+                completed = self.run_entrypoint(relative, *argv, env={
+                    "STEGVERSE_ORG_FEDERATION_ROOT": str(self.work / "empty-mesh")})
+                self.assertNotIn("Traceback", completed.stderr)
+                self.assertEqual(completed.returncode, status, completed.stdout + completed.stderr)
+                refusal = json.loads(completed.stdout.strip().splitlines()[-1])
+                self.assertRefusal(refusal, "ENTRYPOINT_INPUT_REFUSED")
+                self.assertEqual(refusal["failed_predicate"], "RecursionError")
+                self.assertIs(refusal["terminal"], True)
+        self.assertFalse((self.work / "out.json").exists())
+
+    def test_a_deep_process_boundary_result_quarantines_the_frame_and_the_cycle_goes_on(self):
+        self.publish_inbound(THIS.lower() + ".capability-discovery", {"operation": "LIST_CAPABILITIES"},
+                             "pb-deep", epoch=SUPPLIED)
+        real = subprocess.run
+        deep = self.DEEP
+
+        def run(command, *args, **kwargs):
+            if any(str(part).endswith("process_boundary.py") for part in command):
+                Path(command[command.index("--out") + 1]).write_text(deep)
+                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            return real(command, *args, **kwargs)
+        with mock.patch.object(self.K.subprocess, "run", run):
+            refused, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertEqual(refused["result"]["status"], "REFUSED_QUARANTINED")
+        self.assertRefusal(refused["result"]["refusal"], "FRAME_INGEST_FAILED")
+        self.assertIn("endpoint_adapter_result_invalid: RecursionError", refused["result"]["refusal"]["detail"])
+        self.assertIsNotNone(refused["seen_marker"])
+        self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
+
+    def test_process_boundary_refuses_a_deep_adapter_result_and_reads_a_deep_live_row_as_torn(self):
+        boundary = _load("deep_process_boundary", self.root, "org-boundary/runtime/process_boundary.py")
+        result = self.work / "result.json"
+        result.write_text(self.DEEP)
+        with self.assertRaises(SystemExit) as raised:
+            boundary.load_result(result)
+        self.assertEqual(str(raised.exception.code), "endpoint-adapter-result-invalid: RecursionError")
+        live = self.work / "live.jsonl"
+        live.write_text(self.DEEP + "\n")
+        base = {"service_id": "probe", "packet_id": "probe", "payload_hash": "0" * 64}
+        self.assertEqual(boundary.resume_live_history(live, base), [])
+
+
 class SeededLegacySource(ConsumingRoutes):
     """O-1 ordering: a frame never leaves when its receipt pair would be refused."""
 
