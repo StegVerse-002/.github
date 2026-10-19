@@ -20,7 +20,8 @@ EPOCH_RETRY_ENTRYPOINT="resident-runtime/federation_cycle.py (--hb-epoch, or "+K
 OUT=ROOT/"resident-runtime"/"federation"/"latest-cycle.json"
 
 def heartbeat(hb_epoch:int)->dict:
-    return {**K.hb_reference(K.epoch_now_ns(hb_epoch)),"derived_from_clock":False,"epoch_source":"SUPPLIED"}
+    # Marked derived_from_clock false with no sample: it is the supplied epoch.
+    return {**K.hb_reference(K.epoch_now_ns(hb_epoch)),"epoch_source":"SUPPLIED"}
 
 def cycle(hb_epoch:int, *, gateway:bool)->dict:
     if gateway:

@@ -346,7 +346,8 @@ class AnEpochIsForwardedOnlyAsSupplied(unittest.TestCase):
             reference = receipt["hb_reference"]
             self.assertIn(reference["epoch"], epochs, receipt.get("schema"))
             self.assertNotEqual(reference["epoch"], CLOCK_EPOCH)
-            self.assertIs(reference.get("derived_from_clock", False), False)
+            self.assertIs(reference["derived_from_clock"], False)
+            self.assertNotIn("sampled_unix_ns", reference)
             self.assertEqual(receipt["observed_at"], "hb-epoch:" + str(reference["epoch"]))
 
     def test_the_patched_clock_reads_the_fixed_epoch(self):

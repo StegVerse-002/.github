@@ -306,7 +306,7 @@ class AddressedAndClosedTests(RedirectedLedgers):
     def setUp(self):
         super().setUp()
 
-    def publish(self, payload, service, packet_id, origin=PEER):
+    def publish(self, payload, service, packet_id, origin=PEER, *, now_ns=kernel.HB_ANCHOR_UNIX_NS):
         packet = kernel.build_packet(
             origin_org=origin,
             origin_service=kernel.organization_slug(origin) + "." + PROFILE_ID,
@@ -315,7 +315,7 @@ class AddressedAndClosedTests(RedirectedLedgers):
             transition_reference="intr:transition:" + packet_id,
             authority_effect="NONE", packet_id=packet_id)
         # The far side here is fabricated. Only the frame is written.
-        kernel.publish_packet(packet, root=self.mesh, now_ns=kernel.HB_ANCHOR_UNIX_NS)
+        kernel.publish_packet(packet, root=self.mesh, now_ns=now_ns)
         return packet
 
     def consume(self):
@@ -333,7 +333,8 @@ class AddressedAndClosedTests(RedirectedLedgers):
         return frames
 
     def test_a_peer_frame_without_a_supplied_epoch_is_refused_before_any_receipt(self):
-        self.publish(diagnostic("unepoched-diagnostic"), ADDRESS, "unepoched-diagnostic")
+        # Stamped at the clock: the frame carries no supplied epoch either.
+        self.publish(diagnostic("unepoched-diagnostic"), ADDRESS, "unepoched-diagnostic", now_ns=None)
         with mock.patch.dict(os.environ):
             os.environ.pop("STEGVERSE_HB_EPOCH", None)
             with self.assertRaises(ValueError) as refused:

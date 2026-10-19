@@ -104,6 +104,24 @@ def unmarked_clock_values(value, path="$"):
     return found
 
 
+def supplied_marked_wrongly(value, path="$"):
+    """References marked supplied that carry a clock sample or the clock's epoch."""
+    found = []
+    if isinstance(value, dict):
+        if value.get("derived_from_clock") is False and (
+                "sampled_unix_ns" in value or value.get("epoch") == CLOCK_EPOCH):
+            found.append(path)
+        for key, item in value.items():
+            found += supplied_marked_wrongly(item, path + "." + key)
+        packed = value.get("packet_base64")
+        if isinstance(packed, str):
+            found += supplied_marked_wrongly(json.loads(base64.b64decode(packed)), path + ".<packet>")
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            found += supplied_marked_wrongly(item, f"{path}[{index}]")
+    return found
+
+
 def marked_clock_values(value):
     """How many marked clock heartbeats a value carries, decoding packed frames."""
     count = 0
@@ -164,14 +182,23 @@ class ConsumingRoutes(unittest.TestCase):
     def clock_reads(self):
         return len(self.clock_log.read_text().splitlines())
 
-    def publish_inbound(self, service, payload, packet_id):
-        """A peer's frame, stamped at the clock as a fabricated far side would. It is marked."""
+    def publish_inbound(self, service, payload, packet_id, *, epoch=None):
+        """A peer's frame. With no epoch it is stamped at the clock, and marked so; with one, it carries it."""
         packet = self.K.build_packet(
             origin_org=PEER, origin_service="stegverse-org.org-control", destination_org=THIS,
             destination_service=service, payload=payload,
             transition_reference="probe:" + packet_id, authority_effect="NONE", packet_id=packet_id)
-        frame = self.K.publish_packet(packet, root=self.mesh)["frame"]
-        self.assertEqual(frame["heartbeat_reference"]["epoch"], CLOCK_EPOCH)
+        now_ns = None if epoch is None else self.K.epoch_now_ns(epoch)
+        frame = self.K.publish_packet(packet, root=self.mesh, now_ns=now_ns)["frame"]
+        reference = frame["heartbeat_reference"]
+        if epoch is None:
+            self.assertEqual(reference["epoch"], CLOCK_EPOCH)
+            self.assertIs(reference["derived_from_clock"], True)
+            self.assertIn("sampled_unix_ns", reference)
+        else:
+            self.assertEqual(reference["epoch"], epoch)
+            self.assertIs(reference["derived_from_clock"], False)
+            self.assertNotIn("sampled_unix_ns", reference)
         return frame
 
     def frames(self):
@@ -217,10 +244,13 @@ class ConsumingRoutes(unittest.TestCase):
         for receipt in written:
             self.assertEqual(receipt["hb_reference"]["epoch"], SUPPLIED)
             self.assertEqual(receipt["observed_at"], f"hb-epoch:{SUPPLIED}")
+            self.assertIs(receipt["hb_reference"]["derived_from_clock"], False)
+            self.assertNotIn("sampled_unix_ns", receipt["hb_reference"])
 
     def assertNoUnmarkedClock(self):
         for path, value in self.written():
             self.assertEqual(unmarked_clock_values(value), [], str(path))
+            self.assertEqual(supplied_marked_wrongly(value), [], str(path))
 
 
 class ConsumeAndRespond(ConsumingRoutes):
@@ -236,6 +266,20 @@ class ConsumeAndRespond(ConsumingRoutes):
         self.assertFalse((self.root / "resident-runtime/federation/seen.d").exists())
         self.assertNoLedger()
         self.assertEqual(self.clock_reads(), reads)
+
+    def test_a_frame_at_a_supplied_epoch_is_answered_at_that_epoch(self):
+        self.publish_inbound(THIS.lower() + ".org-control",
+                             {"message_class": "ecosystem.communication", "communication_id": "carried",
+                              "subject": "s", "body": {}}, "carried", epoch=SUPPLIED)
+        reads = self.clock_reads()
+        # No caller epoch: the frame's own supplied epoch is the one everything answers at.
+        results = self.K.consume_and_respond(self.root, mesh_root=self.mesh)
+        self.assertEqual(self.clock_reads(), reads)
+        reference = results[0]["response_publication"]["frame"]["heartbeat_reference"]
+        self.assertEqual(reference["epoch"], SUPPLIED)
+        self.assertIs(reference["derived_from_clock"], False)
+        self.assertNotIn("sampled_unix_ns", reference)
+        self.assertNoUnmarkedClock()
 
     def test_the_response_frame_and_receipts_carry_the_supplied_epoch(self):
         self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("supplied-consume"), "supplied-consume")
@@ -284,10 +328,12 @@ class FederationCycle(ConsumingRoutes):
         record = json.loads(out.read_text())
         self.assertEqual(record["heartbeat_reference"]["epoch"], SUPPLIED)
         self.assertIs(record["heartbeat_reference"]["derived_from_clock"], False)
+        self.assertNotIn("sampled_unix_ns", record["heartbeat_reference"])
         self.assertEqual(record["frames_consumed"], 1)
         self.assertEqual(record["responses_emitted"], 1)
         responses = [frame for frame in self.frames() if frame["destination_org"] == PEER]
         self.assertEqual([frame["heartbeat_reference"]["epoch"] for frame in responses], [SUPPLIED])
+        self.assertEqual([frame["heartbeat_reference"]["derived_from_clock"] for frame in responses], [False])
         self.assertAllSupplied()
         self.assertNoUnmarkedClock()
 
@@ -363,13 +409,28 @@ class SelfCharacterizationReceipts(ConsumingRoutes):
 class IngestByRole(ConsumingRoutes):
     """Row 4: a role that stamps time refuses an absent epoch; one that does not reads no clock."""
 
-    def test_roles_that_stamp_no_time_read_no_clock_and_write_nothing(self):
+    def test_an_epoch_less_frame_is_refused_at_every_role(self):
         for service, payload in (
                 (THIS.lower() + ".org-control", {"message_class": "ecosystem.communication",
                                                  "communication_id": "role-control", "subject": "s", "body": {}}),
                 (THIS.lower() + ".boundary-diagnostic", {"probe": "ping"})):
             with self.subTest(service=service):
                 frame = self.publish_inbound(service, payload, "role-" + service)
+                reads = self.clock_reads()
+                with self.assertRaises(self.K.SuppliedEpochRefused) as refused:
+                    self.K.ingest_frame(self.root, frame, mesh_root=self.mesh)
+                self.assertRefusal(refused.exception.refusal)
+                self.assertEqual(self.clock_reads(), reads)
+        self.assertNoLedger()
+        self.assertFalse((self.root / "resident-runtime/control").exists())
+
+    def test_roles_that_stamp_no_time_consume_a_supplied_frame_without_the_clock(self):
+        for service, payload in (
+                (THIS.lower() + ".org-control", {"message_class": "ecosystem.communication",
+                                                 "communication_id": "role-control", "subject": "s", "body": {}}),
+                (THIS.lower() + ".boundary-diagnostic", {"probe": "ping"})):
+            with self.subTest(service=service):
+                frame = self.publish_inbound(service, payload, "role-" + service, epoch=SUPPLIED)
                 reads = self.clock_reads()
                 result = self.K.ingest_frame(self.root, frame, mesh_root=self.mesh)
                 self.assertEqual(result["status"], "CONSUMED")
@@ -404,6 +465,106 @@ class IngestByRole(ConsumingRoutes):
         self.assertAllSupplied()
 
 
+class HeartbeatMarkers(ConsumingRoutes):
+    """SUPPLIED is derived_from_clock false with no sample; CLOCK is derived_from_clock true."""
+
+    def test_a_supplied_epoch_is_marked_supplied_and_reads_no_clock(self):
+        reads = self.clock_reads()
+        reference = self.K.hb_reference(self.K.epoch_now_ns(SUPPLIED))
+        packet = self.K.build_packet(origin_org=PEER, origin_service="p", destination_org=THIS,
+                                     destination_service="s", payload={})
+        frame = self.K.carrier_frame(packet, now_ns=self.K.epoch_now_ns(SUPPLIED))
+        self.assertEqual(self.clock_reads(), reads)
+        for value in (reference, frame["heartbeat_reference"]):
+            self.assertEqual(value["epoch"], SUPPLIED)
+            self.assertIs(value["derived_from_clock"], False)
+            self.assertNotIn("sampled_unix_ns", value)
+        self.assertEqual(self.K.frame_epoch(frame), SUPPLIED)
+
+    def test_the_clock_path_is_marked_clock(self):
+        reads = self.clock_reads()
+        reference = self.K.hb_reference()
+        self.assertEqual(self.clock_reads(), reads + 1)
+        self.assertEqual(reference["epoch"], CLOCK_EPOCH)
+        self.assertIs(reference["derived_from_clock"], True)
+        self.assertIn("sampled_unix_ns", reference)
+        packet = self.K.build_packet(origin_org=PEER, origin_service="p", destination_org=THIS,
+                                     destination_service="s", payload={})
+        self.assertIsNone(self.K.frame_epoch(self.K.carrier_frame(packet)))
+        # A bare sample with no flag is legacy CLOCK, never SUPPLIED.
+        self.assertIsNone(self.K.frame_epoch({"heartbeat_reference": {"epoch": SUPPLIED,
+                                                                      "sampled_unix_ns": CLOCK_NS}}))
+
+
+class SharedRuleProvenance(ConsumingRoutes):
+    """The shared rule takes a reference only when it is marked supplied; writers never take a CARRIED one."""
+
+    def setUp(self):
+        super().setUp()
+        self.repository = _load("marker_repo_emit", self.root, ".stegverse/transition-ledger/emit.py")
+        self.organization = _load("marker_org_append", self.root, "resident-runtime/aggregate_repo_transition.py")
+
+    def append_repository(self, epoch, transition_id="provenance"):
+        return self.repository.append(transition_id, "TEST", "sha256:" + "a" * 64, "sha256:" + "b" * 64,
+                                      {"n": 1}, "NONE", hb_epoch=epoch)
+
+    def test_an_unmarked_or_clock_reference_is_refused(self):
+        for reference in ({"epoch": SUPPLIED}, {"epoch": SUPPLIED, "derived_from_clock": True},
+                          {"epoch": SUPPLIED, "derived_from_clock": None},
+                          {"epoch": SUPPLIED, "derived_from_clock": "false"}):
+            with self.subTest(reference=reference):
+                refusal = self.K.writer_epoch_refusal(reference, retry_entrypoint="probe")
+                self.assertRefusal(refusal, "HB_EPOCH_PROVENANCE_UNMARKED")
+                with self.assertRaises(self.repository.RepoLedgerEpochRefused) as refused:
+                    self.append_repository(reference)
+                self.assertRefusal(refused.exception.refusal, "HB_EPOCH_PROVENANCE_UNMARKED")
+        self.assertNoLedger()
+
+    def test_a_reference_marked_supplied_is_taken_at_its_epoch(self):
+        receipt = self.append_repository({"epoch": SUPPLIED, "derived_from_clock": False})
+        self.assertEqual(receipt["hb_reference"]["epoch"], SUPPLIED)
+        self.assertIs(receipt["hb_reference"]["derived_from_clock"], False)
+        self.assertRefusal(self.K.writer_epoch_refusal({"epoch": "+33", "derived_from_clock": False},
+                                                       retry_entrypoint="probe"), "HB_EPOCH_INVALID")
+
+    def test_a_carried_reference_with_an_invented_head_is_refused_and_nothing_written(self):
+        invented = {"epoch": SUPPLIED, "derived_from_clock": False, "source": "CARRIED:ORGANIZATION_LEDGER_HEAD",
+                    "head_receipt_sha": "sha256:" + "0123456789abcdef" * 4}
+        with self.assertRaises(self.repository.RepoLedgerEpochRefused) as refused:
+            self.append_repository(invented)
+        self.assertRefusal(refused.exception.refusal, "CARRIED_PROVENANCE_UNVERIFIED")
+        source = None
+        with mock.patch.dict(os.environ, {"STEGVERSE_REPO_LEDGER_ROOT": str(self.work / "source")}):
+            source = self.append_repository(SUPPLIED, "carried-source")
+        with self.assertRaises(self.organization.OrgLedgerEpochRefused) as refused:
+            self.organization.append(source, "REPO_STATE_PROPAGATION", "sha256:" + "a" * 64,
+                                     "sha256:" + "b" * 64, {}, "NONE", hb_epoch=invented)
+        self.assertRefusal(refused.exception.refusal, "CARRIED_PROVENANCE_UNVERIFIED")
+        self.assertNoLedger()
+
+    def test_a_clock_provenance_source_receipt_is_refused_and_nothing_written(self):
+        with mock.patch.dict(os.environ, {"STEGVERSE_REPO_LEDGER_ROOT": str(self.work / "source")}):
+            supplied = self.append_repository(SUPPLIED, "clock-source")
+        clock_reference = {"epoch": CLOCK_EPOCH, "progression_dependency": "OSCILLATOR_ONLY",
+                           "authority_effect": "NONE", "derived_from_clock": True, "sampled_unix_ns": CLOCK_NS}
+        legacy_reference = {"epoch": CLOCK_EPOCH, "progression_dependency": "OSCILLATOR_ONLY",
+                            "authority_effect": "NONE"}
+        for reference in (clock_reference, legacy_reference):
+            with self.subTest(reference=reference):
+                body = {key: value for key, value in supplied.items() if key != "receipt_sha256"}
+                body["hb_reference"] = reference
+                body["observed_at"] = CLOCK_ISO
+                seeded = {**body, "receipt_sha256": self.repository.sha(body)}
+                with self.assertRaises(self.organization.OrgLedgerEpochRefused) as refused:
+                    self.organization.append(seeded, "REPO_STATE_PROPAGATION", "sha256:" + "a" * 64,
+                                             "sha256:" + "b" * 64, {}, "NONE", hb_epoch=SUPPLIED)
+                refusal = refused.exception.refusal
+                self.assertRefusal(refusal, "SOURCE_RECEIPT_IS_CLOCK_PROVENANCE")
+                self.assertIn("CARRIED:LEGACY_CLOCK_RECEIPT", refusal["required_evidence_or_repair"])
+                self.assertIn("existing receipts are never mutated", refusal["required_evidence_or_repair"])
+        self.assertFalse(self.org_ledger.exists())
+
+
 class ClockMarkerSweep(ConsumingRoutes):
     """Row 6: with the clock fixed, every route runs; any clock value written carries its marker."""
 
@@ -419,6 +580,8 @@ class ClockMarkerSweep(ConsumingRoutes):
         ]
         for index, (service, payload) in enumerate(inbound):
             self.publish_inbound(service, payload, f"sweep-{index}")
+        self.publish_inbound(THIS.lower() + ".boundary-diagnostic", {"probe": "carried"}, "sweep-carried",
+                             epoch=SUPPLIED)
         reads = self.clock_reads()
         self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
         egress = _load("marker_egress", self.root, "resident-runtime/organization_egress_boundary.py")
@@ -431,6 +594,7 @@ class ClockMarkerSweep(ConsumingRoutes):
         self.assertGreaterEqual(sum(marked_clock_values(value) for _, value in written), len(inbound))
         for path, value in written:
             self.assertEqual(unmarked_clock_values(value), [], str(path))
+            self.assertEqual(supplied_marked_wrongly(value), [], str(path))
         self.assertAllSupplied()
 
     def test_the_clock_is_fixed_and_counted_in_subprocesses(self):

@@ -27,18 +27,30 @@ def sha(v:Any)->str:
     return "sha256:"+hashlib.sha256(bytes(raw)).hexdigest()
 
 def hb_reference(now_ns:int|None=None)->dict[str,Any]:
-    if now_ns is None:
+    """A heartbeat reference, marked with where its time came from.
+
+    A caller's ``now_ns`` (a supplied epoch's sample time) is SUPPLIED:
+    ``derived_from_clock`` false and no ``sampled_unix_ns``. With none, the
+    clock is read: ``derived_from_clock`` true, with the sample it took.
+    """
+    derived_from_clock=now_ns is None
+    if derived_from_clock:
         now_ns=int(datetime.now(timezone.utc).timestamp()*1_000_000_000)
     if now_ns<HB_ANCHOR_UNIX_NS:
         raise ValueError("sample_precedes_hb32_anchor")
     q,phase=divmod(now_ns-HB_ANCHOR_UNIX_NS,HB_PERIOD_NS)
     epoch=HB_ANCHOR_EPOCH+q
-    return {"epoch":epoch,"generation":epoch,"heartbeat_id":f"HB:{epoch}","sampled_unix_ns":now_ns,
-            "phase_offset_ns":phase,"frequency_hz":HB_HZ,"progression_dependency":"OSCILLATOR_ONLY",
-            "authority_effect":"NONE"}
+    reference={"epoch":epoch,"generation":epoch,"heartbeat_id":f"HB:{epoch}",
+               "phase_offset_ns":phase,"frequency_hz":HB_HZ,"progression_dependency":"OSCILLATOR_ONLY",
+               "authority_effect":"NONE","derived_from_clock":derived_from_clock}
+    if derived_from_clock:
+        reference["sampled_unix_ns"]=now_ns
+    return reference
 
 HB_EPOCH_NOT_SUPPLIED="HB_EPOCH_NOT_SUPPLIED"
 HB_EPOCH_INVALID="HB_EPOCH_INVALID"
+HB_EPOCH_PROVENANCE_UNMARKED="HB_EPOCH_PROVENANCE_UNMARKED"
+CARRIED_PROVENANCE_UNVERIFIED="CARRIED_PROVENANCE_UNVERIFIED"
 HB_EPOCH_PREDICATE="SUBMISSION_CARRIES_THE_SUPPLIED_HB_EPOCH"
 HB_EPOCH_OWNING_EXISTING_GOAL="StegVerse-Labs/.github#2897 / StegVerse-org/.github#162 P0-runtime-and-custody"
 
@@ -60,7 +72,27 @@ def writer_epoch_refusal(hb_epoch:Any, *, retry_entrypoint:str)->dict[str,Any]|N
     A receipt references the heartbeat epoch its caller supplies: an integer,
     or ASCII digits, not below the anchor epoch. An absent one is
     HB_EPOCH_NOT_SUPPLIED and is never derived from a clock.
+
+    A heartbeat reference is supplied only when it says so: ``derived_from_clock``
+    present and exactly false, and its ``epoch`` passes this rule. One without
+    that key, or derived from a clock, is HB_EPOCH_PROVENANCE_UNMARKED. A CARRIED
+    reference is CARRIED_PROVENANCE_UNVERIFIED: no writer here verifies that its
+    ``head_receipt_sha`` is the current ledger head.
     """
+    if isinstance(hb_epoch,dict) and _carried(hb_epoch):
+        return _epoch_refusal(CARRIED_PROVENANCE_UNVERIFIED,
+                              "a CARRIED reference is not verified against the current ledger head: "
+                              +repr(hb_epoch.get("head_receipt_sha")),retry_entrypoint,
+                              repair=("a writer that verifies head_receipt_sha is the current ledger head, that head "
+                                      "derived_from_clock false, and the shared rule passing; none does here"))
+    if isinstance(hb_epoch,dict):
+        if hb_epoch.get("derived_from_clock") is not False:
+            return _epoch_refusal(HB_EPOCH_PROVENANCE_UNMARKED,
+                                  "the heartbeat reference is not marked derived_from_clock false: "
+                                  +repr(hb_epoch.get("derived_from_clock","<absent>")),retry_entrypoint)
+        if isinstance(hb_epoch.get("epoch"),dict):
+            return _epoch_refusal(HB_EPOCH_INVALID,"hb_reference.epoch is not an integer",retry_entrypoint)
+        return writer_epoch_refusal(hb_epoch.get("epoch"),retry_entrypoint=retry_entrypoint)
     if hb_epoch is None:
         code,detail=HB_EPOCH_NOT_SUPPLIED,"no hb_epoch was supplied; a clock-derived epoch is not a supplied one"
     elif isinstance(hb_epoch,bool) or not (isinstance(hb_epoch,int) or (isinstance(hb_epoch,str) and hb_epoch.isascii() and hb_epoch.isdigit())):
@@ -69,10 +101,18 @@ def writer_epoch_refusal(hb_epoch:Any, *, retry_entrypoint:str)->dict[str,Any]|N
         code,detail=HB_EPOCH_INVALID,"hb_epoch precedes the anchor epoch "+str(HB_ANCHOR_EPOCH)+": "+repr(hb_epoch)
     else:
         return None
+    return _epoch_refusal(code,detail,retry_entrypoint)
+
+def _carried(reference:dict[str,Any])->bool:
+    return any(isinstance(reference.get(key),str) and reference[key].upper().startswith("CARRIED")
+               for key in ("source","provenance","epoch_source")) or "head_receipt_sha" in reference
+
+def _epoch_refusal(code:str, detail:str, retry_entrypoint:str, *, repair:str|None=None)->dict[str,Any]:
     return {"disposition":"FAIL_CLOSED","failure_code":code,"failed_predicate":HB_EPOCH_PREDICATE,
             "detail":detail,
-            "required_evidence_or_repair":("the caller supplies hb_epoch= (or --hb-epoch): an integer "
-                                           ">= "+str(HB_ANCHOR_EPOCH)+"; it is never derived from a clock"),
+            "required_evidence_or_repair":repair or ("the caller supplies hb_epoch= (or --hb-epoch): an integer "
+                                                     ">= "+str(HB_ANCHOR_EPOCH)+", or a heartbeat reference marked "
+                                                     "derived_from_clock false; it is never derived from a clock"),
             "retry_entrypoint":retry_entrypoint,
             "owning_existing_goal":HB_EPOCH_OWNING_EXISTING_GOAL,
             "next_attempt":"call again with the supplied epoch; nothing was written",
@@ -83,7 +123,20 @@ def supplied_epoch(hb_epoch:Any, *, retry_entrypoint:str)->int:
     refusal=writer_epoch_refusal(hb_epoch,retry_entrypoint=retry_entrypoint)
     if refusal is not None:
         raise SuppliedEpochRefused(refusal)
-    return int(hb_epoch)
+    return int(hb_epoch["epoch"] if isinstance(hb_epoch,dict) else hb_epoch)
+
+def frame_epoch(frame:dict[str,Any])->int|None:
+    """The epoch a frame carries when the shared rule accepts its heartbeat as supplied, else None.
+
+    A clock-stamped frame (derived_from_clock true, or a bare sampled_unix_ns)
+    carries none: its heartbeat is never taken as a supplied epoch.
+    """
+    reference=frame.get("heartbeat_reference") if isinstance(frame,dict) else None
+    if not isinstance(reference,dict) or "sampled_unix_ns" in reference:
+        return None
+    if writer_epoch_refusal(reference,retry_entrypoint="frame") is not None:
+        return None
+    return int(reference["epoch"])
 
 #: The environment a caller supplies an epoch through when a call path has no
 #: argument for it. Unset is no epoch; it is never filled from a clock.
@@ -228,18 +281,34 @@ def persist_outbox(root:Path, frame:dict[str,Any])->Path:
     path.write_text(json.dumps(frame,indent=2,sort_keys=True)+"\n")
     return path
 
+INGEST_EPOCH_RETRY_ENTRYPOINT=("org-kernel/kernel.py::ingest_frame (a frame whose heartbeat is supplied, "
+                               "or hb_epoch=, or "+SUPPLIED_EPOCH_ENV+")")
+
+def consuming_epoch(frame:dict[str,Any], hb_epoch:Any=None)->int:
+    """The epoch a frame is consumed at: the one it carries as supplied, else the caller's.
+
+    Everything done in response to the frame is stamped from it. A frame with
+    neither is refused six-field before anything is written.
+    """
+    carried=frame_epoch(frame)
+    if carried is not None:
+        return carried
+    return supplied_epoch(caller_epoch(hb_epoch),retry_entrypoint=INGEST_EPOCH_RETRY_ENTRYPOINT)
+
 def ingest_frame(root:Path, frame:dict[str,Any], *, mesh_root:Path|None=None,
                  hb_epoch:Any=None)->dict[str,Any]:
-    """Consume one frame. The frame's own heartbeat is never taken as the supplied epoch."""
+    """Consume one frame at its supplied epoch, or refuse a frame that has none."""
     packet=recover_packet(frame)
     registry=load_registry(root)
     if frame["destination_org"]!=registry["organization"]:
         return {"status":"IGNORED_NOT_ADDRESSED","packet_id":frame["packet_id"]}
+    hb_epoch=consuming_epoch(frame,hb_epoch)
     result=dispatch(root,packet,mesh_root=mesh_root,hb_epoch=hb_epoch)
     return {"status":"CONSUMED","packet":packet,"execution_result":result}
 
 __all__=["hb_reference","HB_EPOCH_NOT_SUPPLIED","HB_EPOCH_INVALID","SuppliedEpochRefused","writer_epoch_refusal","supplied_epoch",
-         "SUPPLIED_EPOCH_ENV","caller_epoch","epoch_now_ns","derive_channel","carrier_frame","recover_packet","dispatch","persist_outbox","ingest_frame",
+         "HB_EPOCH_PROVENANCE_UNMARKED","CARRIED_PROVENANCE_UNVERIFIED",
+         "SUPPLIED_EPOCH_ENV","caller_epoch","epoch_now_ns","frame_epoch","consuming_epoch","derive_channel","carrier_frame","recover_packet","dispatch","persist_outbox","ingest_frame",
          "capability_ingress","CAPABILITY_INGRESS_ROLE"]
 
 
@@ -312,9 +381,12 @@ def consume_addressed_frames(repo_root:Path, *, mesh_root:Path|None=None, seen:s
                              hb_epoch:Any=None)->list[dict[str,Any]]:
     registry=load_registry(repo_root)
     organization=registry["organization"]
+    items=scan_addressed_frames(organization,root=mesh_root,seen=seen)
+    # Every frame's epoch is settled before the first is consumed.
+    epochs=[consuming_epoch(item["frame"],hb_epoch) for item in items]
     results=[]
-    for item in scan_addressed_frames(organization,root=mesh_root,seen=seen):
-        result=ingest_frame(repo_root,item["frame"],mesh_root=mesh_root,hb_epoch=hb_epoch)
+    for item,epoch in zip(items,epochs):
+        result=ingest_frame(repo_root,item["frame"],mesh_root=mesh_root,hb_epoch=epoch)
         results.append({"path":item["path"],"result":result})
     return results
 
@@ -534,24 +606,28 @@ CONSUME_EPOCH_RETRY_ENTRYPOINT="org-kernel/kernel.py::consume_and_respond (hb_ep
 
 def consume_and_respond(repo_root:Path, *, mesh_root:Path|None=None, seen:set[str]|None=None,
                         hb_epoch:Any=None)->list[dict[str,Any]]:
-    """Consume addressed frames and publish their responses at the supplied epoch.
+    """Consume addressed frames and publish each response at that frame's epoch.
 
-    The epoch is ``hb_epoch``, else ``STEGVERSE_HB_EPOCH``. An absent or
-    invalid one is refused six-field before any frame is consumed, so no
-    receipt, response frame or seen marker is written from a clock.
+    A frame is consumed at the epoch it carries as supplied, else at the
+    caller's (``hb_epoch``, else ``STEGVERSE_HB_EPOCH``). Every frame's epoch is
+    settled before the first is consumed: one with neither is refused six-field,
+    so no receipt, response frame or seen marker is written from a clock.
     """
-    hb_epoch=supplied_epoch(caller_epoch(hb_epoch),retry_entrypoint=CONSUME_EPOCH_RETRY_ENTRYPOINT)
-    now_ns=epoch_now_ns(hb_epoch)
+    if caller_epoch(hb_epoch) is not None:
+        hb_epoch=supplied_epoch(caller_epoch(hb_epoch),retry_entrypoint=CONSUME_EPOCH_RETRY_ENTRYPOINT)
     registry=load_registry(repo_root)
     organization=registry["organization"]
     durable_seen=federation_seen_frame_names(repo_root)
     effective_seen=set(seen or set())|durable_seen
     out=[]
-    for item in scan_addressed_frames(organization,root=mesh_root,seen=effective_seen):
+    items=scan_addressed_frames(organization,root=mesh_root,seen=effective_seen)
+    epochs=[consuming_epoch(item["frame"],hb_epoch) for item in items]
+    for item,epoch in zip(items,epochs):
+        now_ns=epoch_now_ns(epoch)
         packet=recover_packet(item["frame"])
         payload=packet.get("payload") or {}
         message_class=payload.get("message_class")
-        result=ingest_frame(repo_root,item["frame"],mesh_root=mesh_root,hb_epoch=hb_epoch)
+        result=ingest_frame(repo_root,item["frame"],mesh_root=mesh_root,hb_epoch=epoch)
         response_publication=None
         if result.get("status")=="CONSUMED" and message_class in {
             "ecosystem.monitor.request","ecosystem.work.request","ecosystem.communication"}:

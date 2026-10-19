@@ -144,6 +144,7 @@ def _heartbeat(hb_epoch):
         "epoch": hb_epoch,
         "progression_dependency": "OSCILLATOR_ONLY",
         "authority_effect": "NONE",
+        "derived_from_clock": False,
     }
 
 

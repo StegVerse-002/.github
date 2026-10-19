@@ -73,11 +73,44 @@ def verify_repo(receipt):
     return claimed
 
 
+SOURCE_RECEIPT_IS_CLOCK_PROVENANCE = "SOURCE_RECEIPT_IS_CLOCK_PROVENANCE"
+
+
+def source_provenance_refusal(receipt):
+    """The six-field FAIL_CLOSED for a repository receipt whose epoch is not marked supplied, else None.
+
+    A source is retained and linked only when its ``hb_reference`` is marked
+    ``derived_from_clock`` false with no ``sampled_unix_ns``. One derived from a
+    clock, or one with no marker (a legacy receipt), is not rebound here.
+    """
+    reference = receipt.get("hb_reference")
+    if (isinstance(reference, dict) and reference.get("derived_from_clock") is False
+            and "sampled_unix_ns" not in reference):
+        return None
+    marker = reference.get("derived_from_clock", "<absent>") if isinstance(reference, dict) else "<no hb_reference>"
+    return {
+        "disposition": "FAIL_CLOSED",
+        "failure_code": SOURCE_RECEIPT_IS_CLOCK_PROVENANCE,
+        "failed_predicate": "SOURCE_RECEIPT_CARRIES_A_SUPPLIED_EPOCH",
+        "detail": "repository receipt " + str(receipt.get("receipt_sha256"))
+                  + " is not marked derived_from_clock false: " + repr(marker),
+        "required_evidence_or_repair": (
+            "a WU-B13 migration transition that rebinds the legacy repo receipt under a supplied epoch "
+            "with provenance CARRIED:LEGACY_CLOCK_RECEIPT + source sha; existing receipts are never mutated"),
+        "retry_entrypoint": "resident-runtime/aggregate_repo_transition.py::append",
+        "owning_existing_goal": kernel.HB_EPOCH_OWNING_EXISTING_GOAL,
+        "next_attempt": "append from a repository receipt written at a supplied epoch; nothing was written",
+        "derived_from_clock": False,
+        "consequence_committed": False,
+    }
+
+
 def _heartbeat(hb_epoch):
     return {
         "epoch": hb_epoch,
         "progression_dependency": "OSCILLATOR_ONLY",
         "authority_effect": "NONE",
+        "derived_from_clock": False,
     }
 
 
@@ -138,6 +171,9 @@ def append(source_receipt, org_transition_class, predecessor_state, successor_st
     """Append the organization receipt for one repository receipt. A replay returns the recorded one."""
     hb_epoch = kernel.supplied_epoch(hb_epoch, retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
     claimed = verify_repo(source_receipt)
+    refusal = source_provenance_refusal(source_receipt)
+    if refusal is not None:
+        raise OrgLedgerEpochRefused(refusal)
     target = store or open_store(ledger_root())
     target.initialize()
     observed = f"hb-epoch:{hb_epoch}"
