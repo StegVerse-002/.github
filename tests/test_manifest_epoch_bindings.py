@@ -102,15 +102,26 @@ def source_of(reference):
     return (ROOT / reference.split("::", 1)[0]).read_text(encoding="utf-8")
 
 
-#: Manifest-declared entrypoints with no in-tree dispatcher or caller, recorded
-#: six-field as MANIFEST_DISPATCHER_NOT_IN_TREE and open for a ruling. Pinned so
-#: a new gap fails here.
-NOT_IN_TREE = {
-    # An operator CLI: nothing in the tree invokes it.
-    "resident-runtime/ecosystem_control.py",
-    # The principal launcher lives in StegVerse-002/micro-node-runtime, not here.
-    "tools/run_self_characterization_principal.py",
-}
+#: The only admissible owner of an entrypoint whose code is not in this tree: a
+#: repository of this organization, declared beside the entrypoint as
+#: ``<key>_dispatcher: {status: PENDING_IN_OTHER_REPO, repo: ...}``
+#: (MANIFEST_DISPATCHER_IN_OTHER_REPO, OPEN until that repo's dispatcher lands).
+OTHER_REPO_PREFIX = "StegVerse-002/"
+
+
+def other_repo_dispatchers(value):
+    """Entrypoint path -> its declared other-repository dispatcher, from ``<key>`` / ``<key>_dispatcher`` pairs."""
+    found = {}
+    if isinstance(value, dict):
+        for key, item in value.items():
+            dispatcher = value.get(key + "_dispatcher")
+            if isinstance(item, str) and PY_PATH.match(item) and isinstance(dispatcher, dict):
+                found[PY_PATH.match(item).group(1)] = dispatcher
+            found.update(other_repo_dispatchers(item))
+    elif isinstance(value, list):
+        for item in value:
+            found.update(other_repo_dispatchers(item))
+    return found
 
 
 def tree_files():
@@ -136,13 +147,34 @@ class ManifestDispatchersInTree(unittest.TestCase):
     def setUp(self):
         self.documents = {name: load(name) for name in MANIFESTS}
 
-    def test_every_declared_entrypoint_has_an_in_tree_caller_or_is_a_recorded_gap(self):
+    def test_every_declared_entrypoint_has_an_in_tree_caller_or_a_declared_other_repo_dispatcher(self):
         declared = set()
+        foreign = {}
         for document in self.documents.values():
             declared |= {match.group(1) for text in strings(document) if (match := PY_PATH.match(text))}
+            foreign.update(other_repo_dispatchers(document))
         gaps = {path for path in declared
                 if not (ROOT / path).is_file() or not in_tree_callers(path, self.documents)}
-        self.assertEqual(gaps, NOT_IN_TREE)
+        for path in sorted(gaps):
+            with self.subTest(entrypoint=path):
+                # Only code that is not in this tree may be owned elsewhere, and only as declared.
+                self.assertFalse((ROOT / path).is_file(), "MANIFEST_DISPATCHER_NOT_IN_TREE: " + path)
+                dispatcher = foreign.get(path)
+                self.assertIsInstance(dispatcher, dict, "MANIFEST_DISPATCHER_NOT_IN_TREE: " + path)
+                self.assertEqual(dispatcher["status"], "PENDING_IN_OTHER_REPO")
+                self.assertTrue(dispatcher["repo"].startswith(OTHER_REPO_PREFIX), dispatcher["repo"])
+        self.assertEqual(gaps, {"tools/run_self_characterization_principal.py"})
+
+    def test_epoch_free_entrypoints_take_no_epoch_and_are_dispatched_in_tree(self):
+        declared = set().union(*(declared_paths(document) for document in self.documents.values()))
+        free = self.documents[ACTIVATION].get("epoch_free_entrypoints") or {}
+        self.assertIn("resident-runtime/ecosystem_control.py", free)
+        for path, entry in free.items():
+            with self.subTest(entrypoint=path):
+                self.assertIs(entry["requires_hb_epoch"], False)
+                self.assertFalse(needs_epoch(path, declared))
+                workflow = source_of(entry["dispatcher"])
+                self.assertIn("python3 " + path + " " + entry["invoked_as"], workflow)
 
 
 class ManifestEpochBindings(unittest.TestCase):

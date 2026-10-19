@@ -114,14 +114,15 @@ def writer_epoch_refusal(hb_epoch:Any, *, retry_entrypoint:str)->dict[str,Any]|N
     """The six-field FAIL_CLOSED of a writer's epoch, or None when it is supplied.
 
     The rule is ``supplied_epoch_failure``. ``hb_epoch`` is the epoch, or a
-    heartbeat reference judged as the carrier's by its own ``epoch``. A CARRIED
-    reference is refused CARRIED_PROVENANCE_UNVERIFIED before the rule: no
-    writer here verifies its ``head_receipt_sha`` against the ledger head.
+    heartbeat reference judged as the carrier's by its own ``epoch``. The rule
+    runs first, so its codes are uniform; a reference it passes that carries a
+    CARRIED claim is then refused CARRIED_PROVENANCE_UNVERIFIED: no writer here
+    verifies its ``head_receipt_sha`` against the ledger head.
     """
     if isinstance(hb_epoch,dict):
-        if _carried(hb_epoch):
-            return carried_refusal(hb_epoch,retry_entrypoint)
         failure=supplied_epoch_failure(hb_epoch.get("epoch"),hb_epoch)
+        if failure is None and _carried(hb_epoch):
+            return carried_refusal(hb_epoch,retry_entrypoint)
     else:
         failure=supplied_epoch_failure(hb_epoch)
     if failure is None:
@@ -422,6 +423,11 @@ def stamps_time(service:dict[str,Any], packet:dict[str,Any])->bool:
                 or (role=="BOUNDARY_LOCAL_CONTROL"
                     and (packet.get("payload") or {}).get("message_class")=="ecosystem.monitor.request"))
 
+def answers(packet:dict[str,Any])->bool:
+    """Whether consuming ``packet`` publishes a response frame, which is stamped at an epoch."""
+    return (packet.get("payload") or {}).get("message_class") in {
+        "ecosystem.monitor.request","ecosystem.work.request","ecosystem.communication"}
+
 def _service(root:Path, packet:dict[str,Any])->dict[str,Any]|None:
     destination=(packet.get("destination") or {}).get("service")
     return next((s for s in load_registry(root)["services"] if s["service_id"]==destination),None)
@@ -430,19 +436,23 @@ FRAME_REFUSED_QUARANTINED="FRAME_REFUSED_QUARANTINED"
 
 def admit_frame(frame:dict[str,Any], hb_epoch:Any=None, *,
                 root:Path|None=None)->tuple[int|None,dict[str,Any]|None]:
-    """A frame's consuming epoch (None when it has none), or the refusal that makes it terminal.
+    """A frame's consuming epoch (None when it has none), or its refusal. Nothing is written.
 
     ``hb_epoch`` is a cycle's fallback, not an explicit epoch for each frame.
-    With ``root``, a frame with no epoch addressed to a route that stamps time
-    is refused HB_EPOCH_NOT_SUPPLIED here. Nothing is written.
+    A refusal for what the frame itself carries (UNMARKED, CARRIED, an invalid
+    epoch, an integrity or ingest error) makes the frame terminal. With
+    ``root``, a valid frame that lends no epoch, addressed to a route that
+    stamps time or answers it, met by a cycle with none, is refused
+    HB_EPOCH_NOT_SUPPLIED with ``frame_left_pending``: it is not the frame's
+    defect, so it stays unseen for a cycle that carries an epoch (§Q).
     """
     try:
         packet=recover_packet(frame)
         epoch=consuming_epoch(frame,hb_epoch,explicit=False)
         if epoch is None and root is not None:
             service=_service(root,packet)
-            if service is not None and stamps_time(service,packet):
-                return None,_clock_frame_refusal()
+            if service is not None and (stamps_time(service,packet) or answers(packet)):
+                return None,{**_clock_frame_refusal(),"frame_left_pending":True}
         return epoch,None
     except Exception as error:
         return None,frame_failure_refusal(error)
@@ -478,7 +488,7 @@ __all__=["hb_reference","HB_EPOCH_NOT_SUPPLIED","HB_EPOCH_INVALID","SuppliedEpoc
          "HB_EPOCH_PROVENANCE_UNMARKED","CARRIED_PROVENANCE_UNVERIFIED","HB_EPOCH_CONFLICT",
          "SHARED_VALIDATOR_SHA256","supplied_epoch_failure","stamps_time",
          "SUPPLIED_EPOCH_ENV","caller_epoch","epoch_now_ns","frame_epoch","consuming_epoch","carried_refusal",
-         "FRAME_REFUSED_QUARANTINED","admit_frame","frame_failure_refusal",
+         "FRAME_REFUSED_QUARANTINED","admit_frame","frame_failure_refusal","FRAME_FILE_MAX_BYTES","answers",
          "HB_REFERENCE_INVALID","FRAME_INTEGRITY_INVALID","FRAME_INGEST_FAILED","derive_channel","carrier_frame","recover_packet","dispatch","persist_outbox","ingest_frame",
          "capability_ingress","CAPABILITY_INGRESS_ROLE"]
 
@@ -508,11 +518,15 @@ def publish_frame(frame:dict[str,Any], *, root:Path|None=None)->Path:
     path.write_text(json.dumps(frame,indent=2,sort_keys=True)+"\n")
     return path
 
+#: The largest frames.d file a scan reads (B-P36p). A carrier frame is a few KiB.
+FRAME_FILE_MAX_BYTES=1<<20
+
 def scan_addressed_frames(organization:str, *, root:Path|None=None, seen:set[str]|None=None,
                           include_unreadable:bool=False)->list[dict[str,Any]]:
     """The frames in ``frames.d`` addressed to ``organization``, in name order.
 
-    Each file is read on its own (F-SCAN). One that is not a JSON object is
+    Each file is read on its own (F-SCAN, B-P36p). One that cannot be read,
+    exceeds FRAME_FILE_MAX_BYTES, is not UTF-8, or is not a JSON object is
     skipped, or, with ``include_unreadable``, returned as ``{"path",
     "frame": None, "unreadable": <error>}`` for its consumer to quarantine.
     One bad file never stops the scan.
@@ -527,7 +541,9 @@ def scan_addressed_frames(organization:str, *, root:Path|None=None, seen:set[str
         if path.name in consumed:
             continue
         try:
-            frame=json.loads(path.read_text())
+            if path.stat().st_size>FRAME_FILE_MAX_BYTES:
+                raise ValueError("frame_file_exceeds_max_bytes: "+str(path.stat().st_size)+" > "+str(FRAME_FILE_MAX_BYTES))
+            frame=json.loads(path.read_bytes().decode("utf-8"))
             if not isinstance(frame,dict):
                 raise ValueError("frame_is_not_a_json_object: "+type(frame).__name__)
         except (OSError,ValueError) as error:
@@ -574,7 +590,8 @@ def consume_addressed_frames(repo_root:Path, *, mesh_root:Path|None=None, seen:s
     results=[]
     for item,(epoch,refusal) in zip(items,admitted):
         if refusal is not None:
-            results.append({"path":item["path"],"result":{"status":"REFUSED",
+            results.append({"path":item["path"],"result":{
+                                "status":"PENDING" if refusal.get("frame_left_pending") else "REFUSED",
                                                           "packet_id":(item["frame"] or {}).get("packet_id"),
                                                           "refusal":refusal}})
             continue
@@ -821,7 +838,14 @@ def consume_and_respond(repo_root:Path, *, mesh_root:Path|None=None, seen:set[st
     items=scan_addressed_frames(organization,root=mesh_root,seen=effective_seen,include_unreadable=True)
     admitted=[admit_item(item,hb_epoch,root=repo_root) for item in items]
     for item,(epoch,refusal) in zip(items,admitted):
-        if refusal is not None:
+        if refusal is not None and refusal.get("frame_left_pending"):
+            # §Q: the cycle lacks the epoch, not the frame. No seen marker and no
+            # quarantine; a later cycle that carries an epoch consumes it.
+            out.append({"path":item["path"],
+                        "result":{"status":"PENDING_EPOCH_NOT_SUPPLIED","packet_id":(item["frame"] or {}).get("packet_id"),
+                                  "refusal":refusal},
+                        "response_publication":None,"seen_marker":None})
+        elif refusal is not None:
             marker=quarantine_refused_frame(repo_root,item["path"],item["frame"],refusal)
             out.append({"path":item["path"],
                         "result":{"status":"REFUSED_QUARANTINED","packet_id":(item["frame"] or {}).get("packet_id"),
@@ -833,16 +857,11 @@ def consume_and_respond(repo_root:Path, *, mesh_root:Path|None=None, seen:set[st
         message_class=payload.get("message_class")
         result=ingest_frame(repo_root,item["frame"],mesh_root=mesh_root,hb_epoch=epoch)
         response_publication=None
-        response_refusal=None
         if epoch is None:
-            # A CLOCK frame is consumed but lends no epoch to stamp a response with.
-            # Endpoint-adapter services stamp time, so a CLOCK frame never reaches them.
-            if result.get("status")=="CONSUMED" and message_class in {
-                    "ecosystem.monitor.request","ecosystem.work.request","ecosystem.communication"}:
-                response_refusal=HB_EPOCH_NOT_SUPPLIED
+            # A CLOCK frame at a route that neither stamps time nor answers: consumed,
+            # with nothing to stamp. One that would be answered is left pending above.
             marker=mark_federation_frame_seen(repo_root,item["path"],item["frame"],result)
-            return {"path":item["path"],"result":result,"response_publication":None,
-                    "response_refused":response_refusal,"seen_marker":str(marker)}
+            return {"path":item["path"],"result":result,"response_publication":None,"seen_marker":str(marker)}
         now_ns=epoch_now_ns(epoch)
         if result.get("status")=="CONSUMED" and message_class in {
             "ecosystem.monitor.request","ecosystem.work.request","ecosystem.communication"}:

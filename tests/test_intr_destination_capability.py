@@ -336,8 +336,8 @@ class AddressedAndClosedTests(RedirectedLedgers):
         # Stamped at the clock: the frame carries no supplied epoch either.
         self.publish(diagnostic("unepoched-diagnostic"), ADDRESS, "unepoched-diagnostic", now_ns=None)
         # The frame's heartbeat is CLOCK and lends no epoch. With none from the
-        # caller this route refuses, reported rather than raised; with the
-        # caller's, it is consumed at that epoch.
+        # caller the frame is left pending, reported rather than raised; with
+        # the caller's, it is consumed at that epoch.
         for supplied in (None, "32"):
             with mock.patch.dict(os.environ):
                 os.environ.pop("STEGVERSE_HB_EPOCH", None)
@@ -345,7 +345,8 @@ class AddressedAndClosedTests(RedirectedLedgers):
                     os.environ["STEGVERSE_HB_EPOCH"] = supplied
                 result, = self.consume()
             if supplied is None:
-                self.assertEqual(result["result"]["status"], "REFUSED")
+                # §Q: left pending, not refused for good: no epoch is the cycle's lack.
+                self.assertEqual(result["result"]["status"], "PENDING")
                 refusal = result["result"]["refusal"]
                 self.assertEqual(refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
                 self.assertIs(refusal["derived_from_clock"], False)

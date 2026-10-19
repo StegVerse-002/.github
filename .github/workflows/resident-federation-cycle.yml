@@ -58,3 +58,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 resident-runtime/federation_cycle.py --hb-epoch "$HB_EPOCH" --out "$RUNNER_TEMP/latest-cycle.json"
+
+      # The in-tree dispatcher of the epoch-free ecosystem_control entrypoint
+      # (activation-manifest.json epoch_free_entrypoints). status takes no epoch.
+      - name: Report the resident status
+        run: python3 resident-runtime/ecosystem_control.py status
