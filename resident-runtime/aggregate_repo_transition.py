@@ -12,10 +12,10 @@ evidence only.
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -23,6 +23,14 @@ from ledger_store import HEAD_KEY, RECEIPT_PREFIX, SOURCE_PREFIX, open_store, pa
 
 ROOT = Path(__file__).resolve().parents[1]
 C = json.loads((ROOT / ".stegverse/transition-ledger/org-contract.json").read_text())
+_spec = importlib.util.spec_from_file_location("org_ledger_kernel", ROOT / "org-kernel/kernel.py")
+kernel = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(kernel)
+
+#: An append's epoch is supplied by its caller. An absent or invalid one is
+#: refused six-field FAIL_CLOSED before the store opens; no clock is read.
+EPOCH_RETRY_ENTRYPOINT = "resident-runtime/aggregate_repo_transition.py::append (hb_epoch=, or --hb-epoch)"
+OrgLedgerEpochRefused = kernel.SuppliedEpochRefused
 
 
 def canon(value):
@@ -128,10 +136,11 @@ def _recorded(store, head, source_digest):
 def append(source_receipt, org_transition_class, predecessor_state, successor_state,
            boundary_evidence=None, authority_effect="NONE", hb_epoch=None, idempotent=True, store=None):
     """Append the organization receipt for one repository receipt. A replay returns the recorded one."""
+    hb_epoch = kernel.supplied_epoch(hb_epoch, retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
     claimed = verify_repo(source_receipt)
     target = store or open_store(ledger_root())
     target.initialize()
-    observed = f"hb-epoch:{hb_epoch}" if hb_epoch is not None else datetime.now(timezone.utc).isoformat()
+    observed = f"hb-epoch:{hb_epoch}"
     retained = {source_key(claimed): source_receipt}
     for _attempt in range(128):
         expected_head = target.get(HEAD_KEY)
@@ -182,10 +191,14 @@ def main():
     parser.add_argument("--authority-effect", default="NONE")
     parser.add_argument("--hb-epoch", type=int, default=None)
     args = parser.parse_args()
-    record = append(
-        load(args.repo_receipt), args.org_transition_class, args.predecessor_org_state_sha256,
-        args.successor_org_state_sha256, json.loads(args.boundary_evidence_json),
-        args.authority_effect, hb_epoch=args.hb_epoch)
+    try:
+        record = append(
+            load(args.repo_receipt), args.org_transition_class, args.predecessor_org_state_sha256,
+            args.successor_org_state_sha256, json.loads(args.boundary_evidence_json),
+            args.authority_effect, hb_epoch=args.hb_epoch)
+    except OrgLedgerEpochRefused as exc:
+        print(json.dumps(exc.refusal, sort_keys=True))
+        raise SystemExit(1)
     print(json.dumps(record, sort_keys=True))
 
 

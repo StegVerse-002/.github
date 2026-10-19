@@ -20,6 +20,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -331,9 +332,22 @@ class AddressedAndClosedTests(RedirectedLedgers):
                 frames.append(frame)
         return frames
 
+    def test_a_peer_frame_without_a_supplied_epoch_is_refused_before_any_receipt(self):
+        self.publish(diagnostic("unepoched-diagnostic"), ADDRESS, "unepoched-diagnostic")
+        with mock.patch.dict(os.environ):
+            os.environ.pop("STEGVERSE_HB_EPOCH", None)
+            with self.assertRaises(ValueError) as refused:
+                self.consume()
+        self.assertEqual(refused.exception.refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+        self.assertIs(refused.exception.refusal["derived_from_clock"], False)
+        self.assertFalse(Path(os.environ["STEGVERSE_REPO_LEDGER_ROOT"]).exists())
+        self.assertFalse(Path(os.environ["STEGVERSE_ORG_LEDGER_ROOT"]).exists())
+
     def test_a_peer_frame_at_the_address_is_received_and_receipted(self):
         self.publish(diagnostic("addressed-diagnostic"), ADDRESS, "addressed-diagnostic")
-        results = self.consume()
+        # The kernel's dispatch carries no epoch; the caller supplies it.
+        with mock.patch.dict(os.environ, {"STEGVERSE_HB_EPOCH": "32"}):
+            results = self.consume()
         self.assertEqual(len(results), 1)
         execution = results[0]["result"]["execution_result"]
         self.assertEqual(results[0]["result"]["status"], "CONSUMED")

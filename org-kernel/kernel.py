@@ -37,6 +37,54 @@ def hb_reference(now_ns:int|None=None)->dict[str,Any]:
             "phase_offset_ns":phase,"frequency_hz":HB_HZ,"progression_dependency":"OSCILLATOR_ONLY",
             "authority_effect":"NONE"}
 
+HB_EPOCH_NOT_SUPPLIED="HB_EPOCH_NOT_SUPPLIED"
+HB_EPOCH_INVALID="HB_EPOCH_INVALID"
+HB_EPOCH_PREDICATE="SUBMISSION_CARRIES_THE_SUPPLIED_HB_EPOCH"
+HB_EPOCH_OWNING_EXISTING_GOAL="StegVerse-Labs/.github#2897 / StegVerse-org/.github#162 P0-runtime-and-custody"
+
+class SuppliedEpochRefused(ValueError):
+    """A receipt writer's refusal of an absent or invalid supplied epoch.
+
+    `refusal` is the six-field FAIL_CLOSED from `writer_epoch_refusal`. Raised
+    before the store opens; no clock is read to stand in for the epoch.
+    """
+    def __init__(self, refusal:dict[str,Any])->None:
+        super().__init__(refusal["failure_code"]+": "+refusal["detail"])
+        self.disposition=refusal["disposition"]
+        self.failed_predicate=refusal["failed_predicate"]
+        self.refusal=dict(refusal)
+
+def writer_epoch_refusal(hb_epoch:Any, *, retry_entrypoint:str)->dict[str,Any]|None:
+    """The six-field FAIL_CLOSED of a receipt writer's epoch, or None when it is supplied.
+
+    A receipt references the heartbeat epoch its caller supplies: an integer,
+    or ASCII digits, not below the anchor epoch. An absent one is
+    HB_EPOCH_NOT_SUPPLIED and is never derived from a clock.
+    """
+    if hb_epoch is None:
+        code,detail=HB_EPOCH_NOT_SUPPLIED,"no hb_epoch was supplied; a clock-derived epoch is not a supplied one"
+    elif isinstance(hb_epoch,bool) or not (isinstance(hb_epoch,int) or (isinstance(hb_epoch,str) and hb_epoch.isascii() and hb_epoch.isdigit())):
+        code,detail=HB_EPOCH_INVALID,"hb_epoch is not an integer: "+repr(hb_epoch)
+    elif int(hb_epoch)<HB_ANCHOR_EPOCH:
+        code,detail=HB_EPOCH_INVALID,"hb_epoch precedes the anchor epoch "+str(HB_ANCHOR_EPOCH)+": "+repr(hb_epoch)
+    else:
+        return None
+    return {"disposition":"FAIL_CLOSED","failure_code":code,"failed_predicate":HB_EPOCH_PREDICATE,
+            "detail":detail,
+            "required_evidence_or_repair":("the caller supplies hb_epoch= (or --hb-epoch): an integer "
+                                           ">= "+str(HB_ANCHOR_EPOCH)+"; it is never derived from a clock"),
+            "retry_entrypoint":retry_entrypoint,
+            "owning_existing_goal":HB_EPOCH_OWNING_EXISTING_GOAL,
+            "next_attempt":"call again with the supplied epoch; nothing was written",
+            "derived_from_clock":False,"consequence_committed":False}
+
+def supplied_epoch(hb_epoch:Any, *, retry_entrypoint:str)->int:
+    """The supplied epoch as an integer, or SuppliedEpochRefused. No clock is read."""
+    refusal=writer_epoch_refusal(hb_epoch,retry_entrypoint=retry_entrypoint)
+    if refusal is not None:
+        raise SuppliedEpochRefused(refusal)
+    return int(hb_epoch)
+
 def derive_channel(payload_hash:str)->dict[str,Any]:
     if not isinstance(payload_hash,str) or not payload_hash.startswith("sha256:") or len(payload_hash)!=71:
         raise ValueError("payload_hash_invalid")
@@ -159,7 +207,7 @@ def ingest_frame(root:Path, frame:dict[str,Any], *, mesh_root:Path|None=None)->d
     result=dispatch(root,packet,mesh_root=mesh_root)
     return {"status":"CONSUMED","packet":packet,"execution_result":result}
 
-__all__=["hb_reference","derive_channel","carrier_frame","recover_packet","dispatch","persist_outbox","ingest_frame",
+__all__=["hb_reference","HB_EPOCH_NOT_SUPPLIED","HB_EPOCH_INVALID","SuppliedEpochRefused","writer_epoch_refusal","supplied_epoch","derive_channel","carrier_frame","recover_packet","dispatch","persist_outbox","ingest_frame",
          "capability_ingress","CAPABILITY_INGRESS_ROLE"]
 
 

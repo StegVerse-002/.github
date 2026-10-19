@@ -14,7 +14,6 @@ import importlib.util
 import json
 import os
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,8 +22,13 @@ _spec = importlib.util.spec_from_file_location(
     "ledger_store", ROOT / "resident-runtime/ledger_store.py")
 ledger_store = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ledger_store)
+_spec = importlib.util.spec_from_file_location("repo_ledger_kernel", ROOT / "org-kernel/kernel.py")
+kernel = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(kernel)
 
 CHAIN_BREAK = "REPO_LEDGER_CHAIN_BREAK"
+EPOCH_RETRY_ENTRYPOINT = ".stegverse/transition-ledger/emit.py::append (hb_epoch=, or --hb-epoch)"
+RepoLedgerEpochRefused = kernel.SuppliedEpochRefused
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
@@ -145,11 +149,16 @@ def _heartbeat(hb_epoch):
 
 def append(transition_id, transition_class, predecessor_state_sha256, successor_state_sha256,
            evidence=None, authority_effect="NONE", hb_epoch=None, idempotent_on=None, store=None):
-    """Append one repository receipt. A replay of the same transition returns the recorded one."""
+    """Append one repository receipt. A replay of the same transition returns the recorded one.
+
+    The epoch is the caller's. An absent or invalid one is refused six-field
+    FAIL_CLOSED before the store opens; no clock stands in for it.
+    """
+    hb_epoch = kernel.supplied_epoch(hb_epoch, retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
     evidence = dict(evidence or {})
     target = store or ledger_store.open_store(lr())
     target.initialize()
-    observed = f"hb-epoch:{hb_epoch}" if hb_epoch is not None else datetime.now(timezone.utc).isoformat()
+    observed = f"hb-epoch:{hb_epoch}"
     for _attempt in range(128):
         expected_head = target.get(ledger_store.HEAD_KEY)
         prior = recorded(transition_id, transition_class, store=target)
@@ -203,6 +212,9 @@ def main():
             hb_epoch=args.hb_epoch)
     except RepoLedgerChainBreak as exc:
         print(json.dumps(chain_break_refusal(exc), sort_keys=True))
+        raise SystemExit(1)
+    except RepoLedgerEpochRefused as exc:
+        print(json.dumps(exc.refusal, sort_keys=True))
         raise SystemExit(1)
     print(json.dumps(record, sort_keys=True))
 
