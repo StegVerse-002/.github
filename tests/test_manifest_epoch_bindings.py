@@ -19,7 +19,8 @@ MANIFESTS = (ACTIVATION, INTERLOCK, "org-runtime/activation.json", "org-boundary
              "resident-runtime/self-characterization/stegverse-002.json")
 NEEDS_EPOCH = re.compile(r"supplied_epoch\(|writer_epoch_refusal\(|SUPPLIED_EPOCH_ENV|consume_and_respond\(|ingest_frame\(")
 PY_PATH = re.compile(r"^([A-Za-z0-9_./-]+\.py)(?:::[A-Za-z_]+)?$")
-KINDS = {"environment", "argument", "frame_heartbeat", "dispatch_input"}
+KINDS = {"argument", "frame_heartbeat", "dispatch_input"}
+WORKFLOWS = ROOT / ".github" / "workflows"
 
 
 def load(relative):
@@ -172,27 +173,53 @@ class ManifestEpochBindings(unittest.TestCase):
                 supplier = binding["supplied_by"]
                 self.assertTrue((ROOT / supplier.split("::", 1)[0]).is_file(), supplier)
                 kind = binding["from"]
-                if kind == "environment":
-                    self.assertEqual(binding["variable"], "STEGVERSE_HB_EPOCH")
-                    if supplier.endswith(".service"):
-                        unit = source_of(supplier)
-                        # Required, not optional ("-"): the unit does not start without it.
-                        self.assertIn("\n" + binding["supplied_via"] + "\n", unit)
-                        self.assertNotIn("EnvironmentFile=-", unit)
-                        self.assertIn("env=dict(os.environ)", source_of(binding["forwarded_by"]))
-                    else:
-                        self.assertIn("env=dict(os.environ)", source_of(supplier))
-                elif kind == "argument":
+                if kind == "argument":
                     self.assertIn(binding["argument"].rstrip("="), source_of(supplier))
                 elif kind == "frame_heartbeat":
                     kernel = source_of(binding["rule"])
                     self.assertIn("def consuming_epoch(", kernel)
                     self.assertIn("hb_epoch=consuming_epoch(frame,hb_epoch)", source_of(supplier))
                 elif kind == "dispatch_input":
-                    workflow = source_of(supplier)
-                    self.assertRegex(workflow, r"workflow_dispatch:\s*\n\s*inputs:[\s\S]*\n\s+" + binding["input"] + ":")
-                    self.assertIn('--hb-epoch "$HB_EPOCH"', workflow)
-                    self.assertIn("HB_EPOCH: ${{ github.event.inputs." + binding["input"] + " }}", workflow)
+                    self.assertEqual(supplier, binding["dispatcher"])
+
+    def test_each_binding_has_an_in_tree_workflow_dispatch_that_supplies_the_epoch(self):
+        """No host outside the tree binds an epoch: each binding names an in-repo dispatcher."""
+        for path, binding in bindings(self.documents).items():
+            with self.subTest(entrypoint=path):
+                workflow_path = binding["dispatcher"]
+                self.assertTrue(workflow_path.startswith(".github/workflows/"), workflow_path)
+                workflow = source_of(workflow_path)
+                on = workflow.split("\njobs:")[0]
+                self.assertRegex(on, r"workflow_dispatch:\s*\n\s*inputs:[\s\S]*\n\s+hb_epoch:\s*\n[\s\S]*?required: true")
+                self.assertNotRegex(on, r"\n\s*schedule:")
+                # The "" -> NOT_SUPPLIED gate runs the shared rule before anything else.
+                self.assertIn('if hb_epoch == "":', workflow)
+                self.assertIn("kernel.writer_epoch_refusal(", workflow)
+                self.assertIn("HB_EPOCH: ${{ github.event.inputs.hb_epoch }}", workflow)
+                self.assertIn('--hb-epoch "$HB_EPOCH"', workflow)
+                gate = workflow.index("kernel.writer_epoch_refusal(")
+                reached = Path(binding.get("reached_from", path)).name
+                self.assertIn(reached, workflow[gate:])
+                self.assertNotIn("EnvironmentFile", workflow)
+
+    def test_no_schedule_or_push_trigger_reaches_an_epoch_requiring_entrypoint(self):
+        """A schedule or push run never invokes an entrypoint that needs an epoch."""
+        declared = set().union(*(declared_paths(document) for document in self.documents.values()))
+        requiring = {Path(path).name for path in declared if needs_epoch(path, declared)}
+        for workflow_path in sorted(WORKFLOWS.glob("*.yml")):
+            workflow = workflow_path.read_text(encoding="utf-8")
+            on, _, jobs = workflow.partition("\njobs:")
+            with self.subTest(workflow=workflow_path.name):
+                self.assertNotRegex(on, r"\n\s*schedule:")
+                if not re.search(r"\n\s*(push|pull_request):", on):
+                    continue  # dispatched only: the dispatch carries its own hb_epoch
+                for job in re.split(r"\n  (?=[A-Za-z0-9_-]+:\n)", jobs):
+                    if "if: github.event_name == 'workflow_dispatch'" in job:
+                        continue
+                    for line in job.splitlines():
+                        invoked = re.search(r"python3?\s+([\w./-]+\.py)", line)
+                        if invoked:
+                            self.assertNotIn(Path(invoked.group(1)).name, requiring, line)
 
 
 if __name__ == "__main__":

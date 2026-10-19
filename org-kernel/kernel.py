@@ -447,6 +447,13 @@ def admit_frame(frame:dict[str,Any], hb_epoch:Any=None, *,
     except Exception as error:
         return None,frame_failure_refusal(error)
 
+def admit_item(item:dict[str,Any], hb_epoch:Any=None, *,
+               root:Path|None=None)->tuple[int|None,dict[str,Any]|None]:
+    """``admit_frame`` for a scanned item. A file that is not a frame is FRAME_INGEST_FAILED (F-SCAN)."""
+    if "unreadable" in item:
+        return None,frame_failure_refusal(item["unreadable"])
+    return admit_frame(item["frame"],hb_epoch,root=root)
+
 def ingest_frame(root:Path, frame:dict[str,Any], *, mesh_root:Path|None=None,
                  hb_epoch:Any=None)->dict[str,Any]:
     """Consume one frame at its supplied epoch (see ``consuming_epoch``), or refuse it.
@@ -501,7 +508,15 @@ def publish_frame(frame:dict[str,Any], *, root:Path|None=None)->Path:
     path.write_text(json.dumps(frame,indent=2,sort_keys=True)+"\n")
     return path
 
-def scan_addressed_frames(organization:str, *, root:Path|None=None, seen:set[str]|None=None)->list[dict[str,Any]]:
+def scan_addressed_frames(organization:str, *, root:Path|None=None, seen:set[str]|None=None,
+                          include_unreadable:bool=False)->list[dict[str,Any]]:
+    """The frames in ``frames.d`` addressed to ``organization``, in name order.
+
+    Each file is read on its own (F-SCAN). One that is not a JSON object is
+    skipped, or, with ``include_unreadable``, returned as ``{"path",
+    "frame": None, "unreadable": <error>}`` for its consumer to quarantine.
+    One bad file never stops the scan.
+    """
     mesh=(root or federation_root()).resolve()
     frames=mesh/"frames.d"
     if not frames.exists():
@@ -511,7 +526,14 @@ def scan_addressed_frames(organization:str, *, root:Path|None=None, seen:set[str
     for path in sorted(frames.glob("*.json")):
         if path.name in consumed:
             continue
-        frame=json.loads(path.read_text())
+        try:
+            frame=json.loads(path.read_text())
+            if not isinstance(frame,dict):
+                raise ValueError("frame_is_not_a_json_object: "+type(frame).__name__)
+        except (OSError,ValueError) as error:
+            if include_unreadable:
+                out.append({"path":str(path),"frame":None,"unreadable":error})
+            continue
         if frame.get("destination_org")==organization:
             out.append({"path":str(path),"frame":frame})
     return out
@@ -545,14 +567,15 @@ def consume_addressed_frames(repo_root:Path, *, mesh_root:Path|None=None, seen:s
                              hb_epoch:Any=None)->list[dict[str,Any]]:
     registry=load_registry(repo_root)
     organization=registry["organization"]
-    items=scan_addressed_frames(organization,root=mesh_root,seen=seen)
+    items=scan_addressed_frames(organization,root=mesh_root,seen=seen,include_unreadable=True)
     # Every frame is admitted or refused before the first is consumed. A refused
     # frame is reported, not consumed, and does not stop the frames after it.
-    admitted=[admit_frame(item["frame"],hb_epoch,root=repo_root) for item in items]
+    admitted=[admit_item(item,hb_epoch,root=repo_root) for item in items]
     results=[]
     for item,(epoch,refusal) in zip(items,admitted):
         if refusal is not None:
-            results.append({"path":item["path"],"result":{"status":"REFUSED","packet_id":item["frame"].get("packet_id"),
+            results.append({"path":item["path"],"result":{"status":"REFUSED",
+                                                          "packet_id":(item["frame"] or {}).get("packet_id"),
                                                           "refusal":refusal}})
             continue
         try:
@@ -795,13 +818,13 @@ def consume_and_respond(repo_root:Path, *, mesh_root:Path|None=None, seen:set[st
     durable_seen=federation_seen_frame_names(repo_root)
     effective_seen=set(seen or set())|durable_seen
     out=[]
-    items=scan_addressed_frames(organization,root=mesh_root,seen=effective_seen)
-    admitted=[admit_frame(item["frame"],hb_epoch,root=repo_root) for item in items]
+    items=scan_addressed_frames(organization,root=mesh_root,seen=effective_seen,include_unreadable=True)
+    admitted=[admit_item(item,hb_epoch,root=repo_root) for item in items]
     for item,(epoch,refusal) in zip(items,admitted):
         if refusal is not None:
             marker=quarantine_refused_frame(repo_root,item["path"],item["frame"],refusal)
             out.append({"path":item["path"],
-                        "result":{"status":"REFUSED_QUARANTINED","packet_id":item["frame"].get("packet_id"),
+                        "result":{"status":"REFUSED_QUARANTINED","packet_id":(item["frame"] or {}).get("packet_id"),
                                   "refusal":refusal},
                         "response_publication":None,"seen_marker":str(marker)})
     def respond(item:dict[str,Any], epoch:int|None)->dict[str,Any]:

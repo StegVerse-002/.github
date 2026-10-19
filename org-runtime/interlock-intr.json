@@ -46,7 +46,9 @@
             "from": "frame_heartbeat",
             "rule": "org-kernel/kernel.py::consuming_epoch",
             "supplied_by": "org-kernel/kernel.py::ingest_frame",
-            "forwarded_by": "org-boundary/runtime/capability_ingress.py::receive"
+            "forwarded_by": "org-boundary/runtime/capability_ingress.py::receive",
+            "dispatcher": ".github/workflows/organization-ledger-transition.yml",
+            "reached_from": "resident-runtime/intr_destination_ingress.py"
           }
         },
         "binding_role": "ORGANIZATION_RECEIVING_OPERATION_RESOLUTION",
@@ -95,7 +97,9 @@
         "from": "dispatch_input",
         "input": "hb_epoch",
         "supplied_by": ".github/workflows/organization-ledger-transition.yml",
-        "forwarded_by": "resident-runtime/intr_destination_ingress.py::diagnostic_self_closure"
+        "forwarded_by": "resident-runtime/intr_destination_ingress.py::diagnostic_self_closure",
+        "dispatcher": ".github/workflows/organization-ledger-transition.yml",
+        "reached_from": "resident-runtime/intr_destination_ingress.py"
       }
     },
     "peer_capability_resolution": {

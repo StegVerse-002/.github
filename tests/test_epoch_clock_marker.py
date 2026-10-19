@@ -824,6 +824,42 @@ class OneBadFrameNeverStopsTheCycle(ConsumingRoutes):
         self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
 
 
+class MalformedFrameFiles(ConsumingRoutes):
+    """F-SCAN: a file in frames.d that is not a frame is quarantined by name; the scan goes on."""
+
+    def test_malformed_files_before_a_valid_frame_never_block_the_cycle(self):
+        directory = self.mesh / "frames.d"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "0-a-not-json.json").write_text("{not json")
+        (directory / "0-b-array.json").write_text("[1,2,3]")
+        (directory / "0-c-string.json").write_text('"frame"')
+        self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("after-malformed"), "after-malformed",
+                             epoch=SUPPLIED)
+        reads = self.clock_reads()
+        addressed = self.K.consume_addressed_frames(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertEqual([row["result"]["status"] for row in addressed][:3], ["REFUSED"] * 3)
+        results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        by_name = {Path(row["path"]).name: row["result"] for row in results}
+        for name in ("0-a-not-json.json", "0-b-array.json", "0-c-string.json"):
+            self.assertEqual(by_name[name]["status"], "REFUSED_QUARANTINED", name)
+            self.assertRefusal(by_name[name]["refusal"], "FRAME_INGEST_FAILED")
+        self.assertEqual(by_name["0-a-not-json.json"]["refusal"]["failed_predicate"], "JSONDecodeError")
+        self.assertEqual(by_name["0-b-array.json"]["refusal"]["failed_predicate"], "ValueError")
+        valid = [row for name, row in by_name.items() if not name.startswith("0-")]
+        self.assertEqual([row["status"] for row in valid], ["CONSUMED"])
+        repository = [r for r in self.receipts() if r["schema"] == "stegverse.repo-transition-receipt/v1"]
+        self.assertEqual({r["evidence"]["communication_id"] for r in repository}, {"after-malformed"})
+        self.assertEqual(self.clock_reads(), reads)
+        self.assertAllSupplied()
+        self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
+
+    def test_collecting_responses_skips_a_malformed_file(self):
+        directory = self.mesh / "frames.d"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "0-not-json.json").write_text("{not json")
+        self.assertEqual(self.K.collect_ecosystem_responses(THIS, "x", mesh_root=self.mesh)["response_count"], 0)
+
+
 class SeededLegacySource(ConsumingRoutes):
     """O-1 ordering: a frame never leaves when its receipt pair would be refused."""
 
