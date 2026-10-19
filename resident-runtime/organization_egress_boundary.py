@@ -338,13 +338,13 @@ def _record(transition_id: str, transition_class: str, predecessor: str, success
     A later attempt for the same transition returns the recorded pair. Identity
     is the transition id and class, plus the communication id, payload digest,
     and disposition. A frame stamped at another time is the same transition.
-    The organization receipt takes the repository receipt's epoch.
+    The organization writer takes the epoch supplied here, never one read back
+    from the repository receipt.
     """
     repository_receipt = repository_ledger.append(
         transition_id, transition_class, predecessor, successor,
         dict(record), "NONE", hb_epoch=hb_epoch,
         idempotent_on=("communication_id", "payload_sha256", "disposition"))
-    epoch = repository_receipt["hb_reference"]["epoch"]
     boundary = {
         "operation": OPERATION_ID,
         "intended_action": record["intended_action"],
@@ -355,7 +355,7 @@ def _record(transition_id: str, transition_class: str, predecessor: str, success
         boundary["communication_id"] = record["communication_id"]
     organization_receipt = organization_ledger.append(
         repository_receipt, "REPO_STATE_PROPAGATION", predecessor, successor,
-        boundary, "NONE", hb_epoch=epoch, idempotent=True)
+        boundary, "NONE", hb_epoch=hb_epoch, idempotent=True)
     return {"repository_receipt": repository_receipt,
             "organization_receipt": organization_receipt}
 

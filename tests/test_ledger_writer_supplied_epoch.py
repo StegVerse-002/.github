@@ -271,5 +271,176 @@ class EpochTextIsJudgedByTheSharedRule(unittest.TestCase):
                 self.assertEqual(result["hb_reference"]["epoch"], 4096)
 
 
+
+SUPPLIED = 4096
+#: The epoch a patched clock reads. No receipt may carry it.
+CLOCK_EPOCH = 5000
+PEER = "StegVerse-org"
+STANDING = {"mode": "ESTABLISH_GENESIS", "node_ref": "epoch-provenance", "predecessor": None}
+REGISTRY = json.loads((ROOT / "org-boundary/registry/services.json").read_text(encoding="utf-8"))
+datetime_module = sys.modules["datetime"]
+
+
+class _FixedClock(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        kernel = repository.kernel
+        now_ns = kernel.HB_ANCHOR_UNIX_NS + (CLOCK_EPOCH - kernel.HB_ANCHOR_EPOCH) * kernel.HB_PERIOD_NS
+        return datetime.fromtimestamp(now_ns / 1_000_000_000, tz)
+
+
+def _diagnostic(communication_id):
+    return {"message_class": "ecosystem.communication", "communication_id": communication_id,
+            "subject": "purpose-neutral mesh diagnostic",
+            "body": {"schema": "stegverse.org-intr-destination-diagnostic/v1",
+                     "probe": "diagnostic-crossing"}}
+
+
+class AnEpochIsForwardedOnlyAsSupplied(unittest.TestCase):
+    """The organization writer gets the epoch supplied to the ingress, never one read back.
+
+    Each ingress runs with the epoch absent and the clock patched to a fixed
+    value: nothing is written. A repository receipt already recorded at another
+    epoch does not lend that epoch to the organization receipt.
+    """
+
+    def setUp(self):
+        self._work = tempfile.TemporaryDirectory()
+        self.addCleanup(self._work.cleanup)
+        work = Path(self._work.name)
+        self.repo_root, self.org_root, self.mesh = work / "repo", work / "org", work / "mesh"
+        env = {k: v for k, v in os.environ.items() if k != "STEGVERSE_HB_EPOCH"}
+        env.update({"STEGVERSE_REPO_LEDGER_ROOT": str(self.repo_root),
+                    "STEGVERSE_ORG_LEDGER_ROOT": str(self.org_root)})
+        patcher = mock.patch.dict(os.environ, env, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.ingress = _load("provenance_ingress", "resident-runtime/intr_destination_ingress.py")
+        self.egress = _load("provenance_egress", "resident-runtime/organization_egress_boundary.py")
+        # Modules loaded later (self-closure, dispatch) bind the patched clock too.
+        clocks = [mock.patch.object(datetime_module, "datetime", _FixedClock)]
+        for module in (self.ingress.kernel, self.ingress.repository_ledger.kernel,
+                       self.ingress.organization_ledger.kernel, self.egress.kernel,
+                       self.egress.repository_ledger.kernel, self.egress.organization_ledger.kernel):
+            clocks.append(mock.patch.object(module, "datetime", _FixedClock))
+        for clock in clocks:
+            clock.start()
+            self.addCleanup(clock.stop)
+
+    def receipts(self):
+        found = []
+        for root in (self.repo_root, self.org_root):
+            if root.exists():
+                found += [json.loads(path.read_text()) for path in root.rglob("receipts/*.json")]
+        return found
+
+    def assertNothingWritten(self):
+        self.assertFalse(self.repo_root.exists())
+        self.assertFalse(self.org_root.exists())
+        self.assertFalse((self.mesh / "frames.d").exists())
+
+    def assertOnlySupplied(self, *epochs):
+        written = self.receipts()
+        self.assertTrue(written)
+        for receipt in written:
+            reference = receipt["hb_reference"]
+            self.assertIn(reference["epoch"], epochs, receipt.get("schema"))
+            self.assertNotEqual(reference["epoch"], CLOCK_EPOCH)
+            self.assertIs(reference.get("derived_from_clock", False), False)
+            self.assertEqual(receipt["observed_at"], "hb-epoch:" + str(reference["epoch"]))
+
+    def test_the_patched_clock_reads_the_fixed_epoch(self):
+        self.assertEqual(self.ingress.kernel.hb_reference()["epoch"], CLOCK_EPOCH)
+
+    def test_receive_without_an_epoch_writes_nothing(self):
+        with self.assertRaises(ValueError) as refused:
+            self.ingress.receive(_diagnostic("absent-receive"), registry=REGISTRY,
+                                 packet_id="absent-receive")
+        self.assertEqual(refused.exception.refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+        self.assertNothingWritten()
+
+    def test_emit_without_an_epoch_writes_nothing(self):
+        with self.assertRaises(ValueError) as refused:
+            self.egress.emit(PEER, _diagnostic("absent-emit"), standing=STANDING,
+                             capability="intr-destination", mesh_root=self.mesh)
+        self.assertEqual(refused.exception.refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+        self.assertNothingWritten()
+
+    def test_self_closure_without_an_epoch_writes_nothing(self):
+        with self.assertRaises(ValueError) as refused:
+            self.ingress.diagnostic_self_closure("absent-closure", mesh_root=self.mesh)
+        self.assertEqual(refused.exception.refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+        self.assertNothingWritten()
+
+    def test_close_without_an_epoch_writes_no_closure(self):
+        kernel = self.egress.kernel
+        emitted = self.egress.emit(PEER, _diagnostic("absent-close"), standing=STANDING,
+                                   capability="intr-destination", mesh_root=self.mesh,
+                                   hb_epoch=SUPPLIED)
+        self.assertEqual(emitted["disposition"], "ALLOW", emitted.get("detail"))
+        before = self.receipts()
+        packet = kernel.recover_packet(json.loads(next((self.mesh / "frames.d").rglob("*.json")).read_text()))
+        chain, previous = [], None
+        for kind in self.egress.FAR_SIDE_RECEIPT_KINDS:
+            receipt = kernel.receipt(kind, packet["packet_id"], packet["destination"]["service"],
+                                     previous, {"payload_hash": kernel.sha(packet["payload"])})
+            chain.append(receipt["receipt_id"])
+            previous = receipt["receipt_id"]
+        response = kernel.build_control_response(
+            packet, {"application_result": {"disposition": "ALLOW"},
+                     "reconstruction": {"terminal_receipt_id": chain[-1]}})
+        kernel.publish_packet(response, root=self.mesh,
+                              now_ns=kernel.HB_ANCHOR_UNIX_NS + 2 * kernel.HB_PERIOD_NS)
+        with self.assertRaises(ValueError) as refused:
+            self.egress.close(PEER, packet["packet_id"], "absent-close", mesh_root=self.mesh)
+        self.assertEqual(refused.exception.refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+        self.assertEqual(len(self.receipts()), len(before))
+        self.assertOnlySupplied(SUPPLIED)
+
+    def test_the_supplied_epoch_reaches_both_receipts(self):
+        result = self.ingress.receive(_diagnostic("supplied"), registry=REGISTRY,
+                                      packet_id="supplied", hb_epoch=str(SUPPLIED))
+        self.assertEqual(result["disposition"], "ALLOW", result.get("detail"))
+        by_digest = {receipt["receipt_sha256"]: receipt for receipt in self.receipts()}
+        for digest in (result["repository_receipt_sha256"], result["organization_receipt_sha256"]):
+            self.assertEqual(by_digest[digest]["hb_reference"]["epoch"], SUPPLIED)
+        self.assertOnlySupplied(SUPPLIED)
+
+    def test_self_closure_writes_only_the_supplied_epoch(self):
+        result = self.ingress.diagnostic_self_closure("supplied-closure", mesh_root=self.mesh,
+                                                      hb_epoch=str(SUPPLIED))
+        self.assertEqual(result["disposition"], "ALLOW", result.get("detail"))
+        self.assertOnlySupplied(SUPPLIED)
+
+    def test_a_recorded_repository_epoch_is_not_forwarded_by_receive(self):
+        # A repository receipt already recorded at 40, with no organization receipt.
+        evidence = self.ingress._evidence(_diagnostic("recorded"), "recorded", "ALLOW")
+        transition = self.ingress.OPERATION_ID + ":recorded"
+        successor = self.ingress.sha({"disposition": "ALLOW", "packet_id": "recorded",
+                                      "communication_id": "recorded",
+                                      "payload_sha256": evidence["payload_sha256"]})
+        self.ingress.repository_ledger.append(
+            transition, self.ingress.OPERATION_ID, evidence["payload_sha256"], successor,
+            dict(evidence), "NONE", hb_epoch=40)
+        result = self.ingress.receive(_diagnostic("recorded"), registry=REGISTRY,
+                                      packet_id="recorded", hb_epoch=SUPPLIED)
+        self.assertIs(result["transition_replayed"], True)
+        organization, = [r for r in self.receipts()
+                         if r["schema"] == "stegverse.organization-transition-receipt/v1"]
+        self.assertEqual(organization["hb_reference"]["epoch"], SUPPLIED)
+        self.assertEqual(organization["observed_at"], "hb-epoch:" + str(SUPPLIED))
+
+    def test_a_recorded_repository_epoch_is_not_forwarded_by_egress(self):
+        record = {"intended_action": "EMIT", "disposition": "ALLOW",
+                  "crossed_an_organization_boundary": True, "communication_id": "egress-recorded",
+                  "payload_sha256": DIGEST_A}
+        self.egress.repository_ledger.append(
+            "EGRESS:recorded", "EGRESS", DIGEST_A, DIGEST_B, dict(record), "NONE", hb_epoch=40)
+        appended = self.egress._record("EGRESS:recorded", "EGRESS", DIGEST_A, DIGEST_B,
+                                       record, SUPPLIED)
+        self.assertEqual(appended["repository_receipt"]["hb_reference"]["epoch"], 40)
+        self.assertEqual(appended["organization_receipt"]["hb_reference"]["epoch"], SUPPLIED)
+
+
 if __name__ == "__main__":
     unittest.main()
