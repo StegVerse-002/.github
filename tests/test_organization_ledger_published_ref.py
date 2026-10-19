@@ -179,5 +179,68 @@ class DiagnosticSelfClosureTests(_TemporaryRef):
         self.assertNotIn("authentic", json.dumps(closed).lower())
 
 
+WORKFLOW = ROOT / ".github/workflows/organization-ledger-transition.yml"
+EPOCH_GATE_STEP = "      - name: Refuse an absent or invalid supplied epoch before any append\n"
+SIX_FIELDS = ("failure_code", "failed_predicate", "required_evidence_or_repair",
+              "retry_entrypoint", "owning_existing_goal", "next_attempt")
+_ABSENT = object()
+
+
+def _epoch_gate_script():
+    """The gate step's own ``run: |`` block, dedented as the runner sees it."""
+    lines = WORKFLOW.read_text(encoding="utf-8").split(EPOCH_GATE_STEP, 1)[1].splitlines()
+    start = next(i for i, line in enumerate(lines) if line.strip() == "run: |") + 1
+    indent = len(lines[start]) - len(lines[start].lstrip())
+    body = []
+    for line in lines[start:]:
+        if line.strip() and len(line) - len(line.lstrip()) < indent:
+            break
+        body.append(line[indent:])
+    return "\n".join(body) + "\n"
+
+
+class TheWorkflowEpochGateIsTheKernelRefusal(unittest.TestCase):
+    """The dispatch hb_epoch is judged by the kernel's writer rule before any append."""
+
+    def run_gate(self, hb_epoch):
+        inputs = {"communication_id": ""}
+        if hb_epoch is not _ABSENT:
+            inputs["hb_epoch"] = hb_epoch
+        env = {key: value for key, value in os.environ.items() if key != "STEGVERSE_HB_EPOCH"}
+        env["DISPATCH_INPUTS"] = json.dumps(inputs)
+        return subprocess.run(["bash", "-e", "-c", _epoch_gate_script()], cwd=ROOT, env=env,
+                              capture_output=True, text=True, check=False)
+
+    def test_the_inline_gate_is_gone(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotIn("DISPATCH_HB_EPOCH_INVALID", workflow)
+        self.assertNotIn('case "$HB_EPOCH"', workflow)
+        self.assertIn("kernel.writer_epoch_refusal(", _epoch_gate_script())
+        self.assertLess(workflow.index(EPOCH_GATE_STEP), workflow.index("--self-closure"))
+
+    def test_absent_and_invalid_epochs_print_the_six_field_refusal(self):
+        cases = [(_ABSENT, "HB_EPOCH_NOT_SUPPLIED")] + [
+            (text, "HB_EPOCH_INVALID")
+            for text in ("", "\uff13\uff13", "\u0663\u0663", "+33", " 33", "33.0", "31", "abc")]
+        for hb_epoch, code in cases:
+            with self.subTest(hb_epoch=hb_epoch if hb_epoch is not _ABSENT else "<absent>"):
+                completed = self.run_gate(hb_epoch)
+                self.assertEqual(completed.returncode, 1, (completed.stdout, completed.stderr))
+                self.assertNotIn("Traceback", completed.stdout + completed.stderr)
+                refusal = json.loads(completed.stdout)
+                self.assertEqual(refusal["disposition"], "FAIL_CLOSED")
+                self.assertEqual(refusal["failure_code"], code)
+                for field in SIX_FIELDS:
+                    self.assertTrue(refusal.get(field), field)
+                self.assertIn("organization-ledger-transition.yml", refusal["retry_entrypoint"])
+                self.assertFalse(refusal["consequence_committed"])
+                self.assertFalse(refusal["derived_from_clock"])
+
+    def test_a_supplied_epoch_passes(self):
+        completed = self.run_gate("4096")
+        self.assertEqual(completed.returncode, 0, (completed.stdout, completed.stderr))
+        self.assertEqual(completed.stdout, "")
+
+
 if __name__ == "__main__":
     unittest.main()
