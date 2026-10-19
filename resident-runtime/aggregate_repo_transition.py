@@ -114,6 +114,47 @@ def _heartbeat(hb_epoch):
     }
 
 
+def _finish_pending_head(store):
+    """Finish a HEAD publication that a torn append left undone, idempotently.
+
+    An append writes its receipt, then HEAD. If it stopped between the two and
+    its rollback did not run, exactly one receipt extends HEAD and nothing names
+    it. That receipt is verified and HEAD is published naming it, by
+    compare-and-swap, so the retried append finds it recorded and lands once.
+    Any other shape is left to `_validate_existing_head`.
+    """
+    head = store.get(HEAD_KEY)
+    named = head.get("receipt_sha256") if isinstance(head, dict) else None
+    reachable = set()
+    cursor = named
+    while isinstance(cursor, str) and cursor not in reachable:
+        record = store.get(receipt_key(cursor))
+        if not isinstance(record, dict):
+            return
+        reachable.add(cursor)
+        cursor = record.get("previous_receipt_sha256")
+    pending = store.list_prefix(RECEIPT_PREFIX) - {receipt_key(digest) for digest in reachable}
+    if len(pending) != 1:
+        return
+    key, = pending
+    try:
+        record = store.get(key)
+    except ValueError:
+        return
+    digest = record.get("receipt_sha256") if isinstance(record, dict) else None
+    if not isinstance(digest, str) or not digest.startswith("sha256:") or receipt_key(digest) != key:
+        return
+    if sha({k: v for k, v in record.items() if k != "receipt_sha256"}) != digest:
+        return
+    if record.get("previous_receipt_sha256") != named:
+        return
+    store.compare_and_swap(HEAD_KEY, head, {
+        "organization": C["organization"],
+        "receipt_sha256": digest,
+        "receipt_path": store.locator(key),
+    })
+
+
 def _validate_existing_head(store):
     """Refuse to extend a chain whose reachable receipts do not verify."""
     head = store.get(HEAD_KEY)
@@ -179,8 +220,14 @@ def append(source_receipt, org_transition_class, predecessor_state, successor_st
     observed = f"hb-epoch:{hb_epoch}"
     retained = {source_key(claimed): source_receipt}
     for _attempt in range(128):
+        _finish_pending_head(target)
         expected_head = target.get(HEAD_KEY)
-        _validate_existing_head(target)
+        try:
+            _validate_existing_head(target)
+        except ValueError as exc:
+            # A torn or damaged store is this ledger's own state, not a defect of
+            # the receipt being appended: the caller retries once it is repaired.
+            raise LedgerWriteFailed("LEDGER_TORN_STORE_RECOVERY_REQUIRED", str(exc)) from exc
         if idempotent:
             prior = _recorded(target, expected_head, claimed)
             if prior is not None:

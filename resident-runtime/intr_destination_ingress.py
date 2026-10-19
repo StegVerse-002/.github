@@ -141,6 +141,26 @@ def _evidence(payload: Any, packet_id: str, disposition: str, *,
     return record
 
 
+class PacketIdCollision(ValueError):
+    """A packet id already bound to a different diagnostic: refused six-field, nothing written."""
+
+    def __init__(self, packet_id: str, evidence: Mapping[str, Any]) -> None:
+        self.refusal = {
+            "disposition": FAIL_CLOSED,
+            "failure_code": "PACKET_ID_BINDS_ANOTHER_DIAGNOSTIC",
+            "failed_predicate": "ONE_PACKET_ID_BINDS_ONE_DIAGNOSTIC",
+            "detail": "packet " + str(packet_id) + " is already recorded with another diagnostic; payload "
+                      + str(evidence.get("payload_sha256")) + " is not that one",
+            "required_evidence_or_repair": "the sender emits this diagnostic under a new packet id",
+            "retry_entrypoint": "the sender's hop",
+            "owning_existing_goal": "INTERLOCK-INTR-RUNTIME-INDEPENDENT-PROTOCOL-001",
+            "next_attempt": "none for this packet id; the recorded transition stands",
+            "derived_from_clock": False,
+            "consequence_committed": False,
+        }
+        super().__init__(self.refusal["failure_code"] + ": " + self.refusal["detail"])
+
+
 def _result(evidence: Mapping[str, Any], appended: Mapping[str, Any] | None, *,
             replayed: bool, received: bool) -> dict[str, Any]:
     disposition = evidence["disposition"]
@@ -225,11 +245,10 @@ def _recorded(disposition: str, payload: Any, packet_id: str, hb_epoch: int | No
         if str(exc) != "ledger_receipt_collision":
             raise
         # The packet id already bound a different diagnostic. The recorded
-        # transition stands; this attempt is not a second one.
-        collided = _evidence(payload, packet_id, FAIL_CLOSED,
-                             failed_predicate="ONE_PACKET_ID_BINDS_ONE_DIAGNOSTIC",
-                             detail=str(exc))
-        return _result(collided, None, replayed=False, received=False)
+        # transition stands; this attempt is refused before anything is written
+        # or answered. A store-side collision is not this: the store raises it
+        # as its own write fault (ledger_store.LedgerWriteFailed).
+        raise PacketIdCollision(packet_id, evidence) from None
     return _result(evidence, appended, replayed=replayed, received=disposition == ALLOW)
 
 

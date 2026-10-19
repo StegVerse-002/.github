@@ -178,6 +178,32 @@ class ManifestDispatchersInTree(unittest.TestCase):
         self.assertEqual(binding["invoked_as"], '--hb-epoch "$HB_EPOCH" status')
 
 
+class OpenRecords(unittest.TestCase):
+    """The open six-field records live in the manifest, not only in its status fields."""
+
+    SIX = ("failure_code", "failed_predicate", "required_evidence_or_repair", "retry_entrypoint",
+           "owning_existing_goal", "next_attempt")
+
+    def test_the_open_records_are_six_field(self):
+        records = {row["failure_code"]: row for row in load(ACTIVATION)["open_records"]}
+        self.assertEqual(set(records), {"RUNTIME_DISPATCHER_PENDING_SUBSTRATE", "MANIFEST_DISPATCHER_IN_OTHER_REPO"})
+        for code, row in records.items():
+            with self.subTest(record=code):
+                for field in self.SIX:
+                    self.assertIsInstance(row.get(field), str, field)
+                    self.assertTrue(row[field].strip(), field)
+                self.assertEqual(row["status"], "OPEN")
+        self.assertEqual(records["MANIFEST_DISPATCHER_IN_OTHER_REPO"]["next_attempt"],
+                         "flips when StegVerse-002/micro-node-runtime#96 merges")
+        launcher = load("resident-runtime/self-characterization/stegverse-002.json")["principal"]["launcher_dispatcher"]
+        self.assertIn("#" + str(launcher["pr"]), records["MANIFEST_DISPATCHER_IN_OTHER_REPO"]["next_attempt"])
+        self.assertIn("CARRIED-epoch transition from the organization ledger head",
+                      records["RUNTIME_DISPATCHER_PENDING_SUBSTRATE"]["detail"])
+
+    def test_the_destination_declares_it_accepts_no_carried_crossings(self):
+        self.assertIs(load(ACTIVATION)["accepts_carried_crossings"], False)
+
+
 class ManifestEpochBindings(unittest.TestCase):
     def setUp(self):
         self.documents = {name: load(name) for name in MANIFESTS}
@@ -211,7 +237,7 @@ class ManifestEpochBindings(unittest.TestCase):
                 elif kind == "frame_heartbeat":
                     kernel = source_of(binding["rule"])
                     self.assertIn("def consuming_epoch(", kernel)
-                    self.assertIn("hb_epoch=consuming_epoch(frame,hb_epoch)", source_of(supplier))
+                    self.assertIn("hb_epoch=consuming_epoch(frame,hb_epoch", source_of(supplier))
                 elif kind == "dispatch_input":
                     self.assertEqual(supplier, binding["dispatcher"])
 

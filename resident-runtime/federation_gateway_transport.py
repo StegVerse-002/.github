@@ -222,7 +222,7 @@ def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str
         }
     packet = K.recover_packet(frame)
     try:
-        result = K.ingest_frame(repo_root, frame, hb_epoch=frame_epoch)
+        result = K.ingest_frame(repo_root, frame, hb_epoch=frame_epoch, explicit=False)
     except (Exception, SystemExit) as error:
         # B-P36o: the frame's failure is its refusal; it is acknowledged BLOCKED, not redelivered.
         # A fault writing this repository's own state is not: the frame is left unacknowledged.
@@ -286,7 +286,8 @@ def _answer(repo_root: Path, registry: dict[str, Any], organization: str, frame:
             pass
         elif message_class in {"ecosystem.monitor.request", "ecosystem.work.request", "ecosystem.communication"}:
             response = K.build_control_response(packet, execution)
-            response_frame = K.carrier_frame(response, now_ns=now_ns)
+            # Built once per request, so a redelivery re-submits the same frame (F-REPUB).
+            _, response_frame = K.response_frame_once(repo_root, packet["packet_id"], response, now_ns=now_ns)
             submit_frame(response_frame)
             response_emitted = 1
             response_ref = response_frame["frame_sha256"]
@@ -297,7 +298,7 @@ def _answer(repo_root: Path, registry: dict[str, Any], organization: str, frame:
             # An endpoint-adapter service stamps time, so a CLOCK frame never reaches it.
             if service and service.get("endpoint_adapter") and now_ns is not None:
                 response = K.build_endpoint_response(packet, execution)
-                response_frame = K.carrier_frame(response, now_ns=now_ns)
+                _, response_frame = K.response_frame_once(repo_root, packet["packet_id"], response, now_ns=now_ns)
                 submit_frame(response_frame)
                 response_emitted = 1
                 response_ref = response_frame["frame_sha256"]
