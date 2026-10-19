@@ -441,6 +441,33 @@ def own_state_write_exit(error:BaseException, retry_entrypoint:str)->int:
     print(json.dumps(own_state_write_refusal(error,retry_entrypoint),sort_keys=True))
     return OWN_STATE_WRITE_FAULT_EXIT
 
+ENTRYPOINT_INPUT_REFUSED="ENTRYPOINT_INPUT_REFUSED"
+
+def run_writer_cli(main:Any, retry_entrypoint:str)->int:
+    """Run a writer's command-line body so it never ends in a traceback (F-WRITER-TRACE).
+
+    A fault writing this repository's own state is the six-field, non-terminal
+    FRAME_DISPATCH_IO_FAILED with exit status OWN_STATE_WRITE_FAULT_EXIT. A
+    six-field refusal raised by the writer is printed with exit status 1. Any
+    other error is bad input: six-field ENTRYPOINT_INPUT_REFUSED, exit status 2.
+    ``SystemExit`` (argparse, an explicit refusal) passes through.
+    """
+    try:
+        status=main()
+    except Exception as error:
+        if own_state_fault(error):
+            return own_state_write_exit(error,retry_entrypoint)
+        carried=getattr(error,"refusal",None)
+        if isinstance(carried,dict) and carried.get("failure_code"):
+            print(json.dumps(carried,sort_keys=True))
+            return 1
+        refusal=_epoch_refusal(ENTRYPOINT_INPUT_REFUSED,type(error).__name__+": "+str(error),retry_entrypoint,
+                               repair="the caller supplies well-formed input; nothing was written for it")
+        refusal["failed_predicate"]=type(error).__name__
+        print(json.dumps(refusal,sort_keys=True))
+        return 2
+    return 0 if status is None else status
+
 def own_state_write_refusal(error:BaseException, retry_entrypoint:str)->dict[str,Any]:
     """The six-field, non-terminal refusal for a fault writing this repository's own state.
 

@@ -992,6 +992,28 @@ class OwnStateWriteFaults(ConsumingRoutes):
     def peer_frames(self):
         return [frame for frame in self.frames() if frame["destination_org"] == PEER]
 
+    def test_a_tear_after_head_is_retried_to_the_recorded_receipt(self):
+        """Idempotent retry: HEAD was published but the append reported a fault; the retry finds it recorded."""
+        self.publish("torn-after-head")
+        real_fsync = os.fsync
+        failed = []
+
+        def fsync(fd):
+            # The directory sync after HEAD is replaced: HEAD names the receipt, yet the append raises.
+            if not failed and os.readlink(f"/proc/self/fd/{fd}") == str(self.repo_ledger):
+                failed.append(fd)
+                raise OSError(5, "I/O error after HEAD")
+            return real_fsync(fd)
+        with mock.patch.object(os, "fsync", fsync):
+            results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertTrue(failed)
+        self.assertPendingNoMarker(results, "OSError")
+        receipt, = self.chain(self.repo_ledger)
+        head = json.loads((self.repo_ledger / "HEAD.json").read_text())
+        self.assertEqual(head["receipt_sha256"].split(":", 1)[1] + ".json", receipt)
+        self.assertConsumedOnce()
+        self.assertEqual(self.chain(self.repo_ledger), [receipt])
+
     def first_receipt_names(self, packet_id):
         """The receipt file names a clean run of this crossing writes, then a clean slate with the frame unseen."""
         self.publish(packet_id)
@@ -1441,6 +1463,41 @@ class WriterEntrypointsNeverTrace(ConsumingRoutes):
                 completed = self.run_entrypoint(relative, *argv, env=env)
                 self.assertNotIn("Traceback", completed.stderr)
                 self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_bad_input_and_an_unwritable_out_never_trace(self):
+        blocker = self.work / "not-a-directory"
+        blocker.write_text("x")
+        garbage = self.work / "garbage.json"
+        garbage.write_text("{not json")
+        payload = self.work / "diagnostic.json"
+        payload.write_text(json.dumps(diagnostic("writer-input")))
+        registry = self.root / "org-boundary/registry/services.json"
+        cases = (
+            ("receive, payload not JSON", "resident-runtime/intr_destination_ingress.py",
+             ("--payload", str(garbage), "--registry", str(registry), "--hb-epoch", str(SUPPLIED)),
+             "ENTRYPOINT_INPUT_REFUSED", 2),
+            ("receive, unwritable --out", "resident-runtime/intr_destination_ingress.py",
+             ("--payload", str(payload), "--registry", str(registry), "--packet-id", "writer-out",
+              "--hb-epoch", str(SUPPLIED), "--out", str(blocker / "result.json")),
+             "FRAME_DISPATCH_IO_FAILED", 75),
+            ("emit, evidence not JSON", ".stegverse/transition-ledger/emit.py",
+             ("--transition-id", "bad", "--transition-class", "PROBE", "--predecessor-state-sha256", "sha256:" + "a" * 64,
+              "--successor-state-sha256", "sha256:" + "b" * 64, "--evidence-json", "{not json",
+              "--hb-epoch", str(SUPPLIED)), "ENTRYPOINT_INPUT_REFUSED", 2),
+            ("cycle, unwritable --out", "resident-runtime/federation_cycle.py",
+             ("--hb-epoch", str(SUPPLIED), "--out", str(blocker / "latest-cycle.json")),
+             "FRAME_DISPATCH_IO_FAILED", 75),
+            ("control, body not JSON", "resident-runtime/ecosystem_control.py",
+             ("--hb-epoch", str(SUPPLIED), "send-message", "--subject", "s", "--body-json", "{not json"),
+             "ENTRYPOINT_INPUT_REFUSED", 2),
+        )
+        for label, relative, argv, code, status in cases:
+            with self.subTest(case=label):
+                completed = self.run_entrypoint(relative, *argv, env={
+                    "STEGVERSE_ORG_FEDERATION_ROOT": str(self.work / "empty-mesh")})
+                self.assertNotIn("Traceback", completed.stderr)
+                self.assertEqual(completed.returncode, status, completed.stdout + completed.stderr)
+                self.assertRefusal(json.loads(completed.stdout.strip().splitlines()[-1]), code)
 
     def test_the_organization_writer_reports_its_own_write_fault(self):
         emit = _load("marker_emit_trace", self.root, ".stegverse/transition-ledger/emit.py")

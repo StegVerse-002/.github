@@ -190,14 +190,10 @@ def endpoint_result(env,svc,envelope_path):
     raise SystemExit("endpoint-adapter-not-installed")
 
 def main():
-    try:
-        run()
-    except Exception as error:
-        # A fault writing this boundary's own state: six-field, non-terminal, no
-        # traceback. The caller retries and the interrupted history resumes (B-P36q).
-        if not kernel.own_state_fault(error):
-            raise
-        sys.exit(kernel.own_state_write_exit(error,EPOCH_RETRY_ENTRYPOINT))
+    # A fault writing this boundary's own state is six-field and non-terminal, with
+    # no traceback; the caller retries and the interrupted history resumes (B-P36q).
+    # Bad input is a six-field refusal (F-WRITER-TRACE).
+    return kernel.run_writer_cli(run,EPOCH_RETRY_ENTRYPOINT)
 
 def run():
     ap=argparse.ArgumentParser()
@@ -303,7 +299,7 @@ def run():
                 legacy_handoff_receipt=state_root/"MASTER_RECORDS_CUSTODY_HANDOFF.json"
                 if handoff_script.is_file():
                     handoff_done=subprocess.run(
-                        ["python3",str(handoff_script),"--state-root",str(state_root)],
+                        ["python3",str(handoff_script),"--state-root",str(state_root),"--hb-epoch",str(hb_epoch)],
                         cwd=ROOT,capture_output=True,text=True,check=False,timeout=120
                     )
                     handoff_value=None
@@ -343,4 +339,4 @@ def run():
     Path(a.out).parent.mkdir(parents=True,exist_ok=True)
     Path(a.out).write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
     print(json.dumps({"status":"PASS","terminal_receipt_id":prev,"service_id":svc["service_id"]}))
-if __name__=="__main__": main()
+if __name__=="__main__": sys.exit(main())

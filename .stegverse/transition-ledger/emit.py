@@ -227,16 +227,11 @@ def _main():
 def main():
     """Append one repository receipt from the command line.
 
-    F-WRITER-TRACE: a fault writing this repository's own state is a six-field,
-    non-terminal record with exit status kernel.OWN_STATE_WRITE_FAULT_EXIT, never a
-    raw OSError or a traceback.
+    F-WRITER-TRACE: it never ends in a traceback. A fault writing this
+    repository's own state is a six-field, non-terminal record (exit status
+    kernel.OWN_STATE_WRITE_FAULT_EXIT); bad input is a six-field refusal.
     """
-    try:
-        return _main()
-    except Exception as exc:
-        if not kernel.own_state_fault(exc):
-            raise
-        return kernel.own_state_write_exit(exc, EPOCH_RETRY_ENTRYPOINT)
+    return kernel.run_writer_cli(_main, EPOCH_RETRY_ENTRYPOINT)
 
 
 if __name__ == "__main__":

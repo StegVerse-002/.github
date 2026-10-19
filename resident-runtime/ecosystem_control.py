@@ -90,16 +90,11 @@ def _main(argv=None)->int:
 def main(argv=None)->int:
     """Run one operator command.
 
-    F-WRITER-TRACE: a fault writing this repository's own state is a six-field,
-    non-terminal record with exit status K.OWN_STATE_WRITE_FAULT_EXIT, never a
-    raw OSError or a traceback.
+    F-WRITER-TRACE: it never ends in a traceback. A fault writing this
+    repository's own state is a six-field, non-terminal record (exit status
+    K.OWN_STATE_WRITE_FAULT_EXIT); bad input is a six-field refusal.
     """
-    try:
-        return _main(argv)
-    except Exception as exc:
-        if not K.own_state_fault(exc):
-            raise
-        return K.own_state_write_exit(exc, EPOCH_RETRY_ENTRYPOINT)
+    return K.run_writer_cli(lambda: _main(argv), EPOCH_RETRY_ENTRYPOINT)
 
 
 if __name__=="__main__":
