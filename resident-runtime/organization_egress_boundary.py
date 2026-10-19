@@ -384,13 +384,21 @@ def _refusal_result(record: Mapping[str, Any], appended: Mapping[str, Any]) -> d
     }
 
 
+EMIT_EPOCH_RETRY_ENTRYPOINT = "resident-runtime/organization_egress_boundary.py::emit (hb_epoch=, or --hb-epoch)"
+
+
 def emit(destination_organization: Any, payload: Mapping[str, Any], *,
          standing: Mapping[str, Any], capability: str | None = None,
          credential_authority: Mapping[str, Any] | None = None,
          transition_reference: str = "ecosystem.transition.interorg.v1",
          root: Path | None = None, mesh_root: Path | None = None,
          hb_epoch: int | None = None) -> dict[str, Any]:
-    """Emit one closable crossing to a derived capability address, and record it."""
+    """Emit one closable crossing to a derived capability address, and record it.
+
+    The epoch is the caller's and is checked before anything is published, so
+    a frame never leaves without the receipt that records it.
+    """
+    hb_epoch = kernel.supplied_epoch(hb_epoch, retry_entrypoint=EMIT_EPOCH_RETRY_ENTRYPOINT)
     origin = this_organization(root)
     try:
         if credential_authority is not None:

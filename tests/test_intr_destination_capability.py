@@ -424,6 +424,16 @@ class AddressedAndClosedTests(RedirectedLedgers):
                               now_ns=kernel.HB_ANCHOR_UNIX_NS + 2 * kernel.HB_PERIOD_NS)
         return chain[-1]
 
+    def test_an_emission_without_a_supplied_epoch_publishes_nothing(self):
+        with self.assertRaises(ValueError) as refused:
+            egress.emit(PEER, diagnostic("unepoched-emission"), standing=STANDING,
+                        capability=PROFILE_ID, mesh_root=self.mesh)
+        self.assertEqual(refused.exception.refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+        self.assertIn("organization_egress_boundary.py::emit",
+                      refused.exception.refusal["retry_entrypoint"])
+        self.assertEqual(self.frames_to(PEER), [])
+        self.assertFalse(Path(os.environ["STEGVERSE_REPO_LEDGER_ROOT"]).exists())
+
     def test_a_diagnostic_crossing_closes_only_when_the_far_side_answers(self):
         emitted = egress.emit(PEER, diagnostic("closable-diagnostic"), standing=STANDING,
                               capability=PROFILE_ID, mesh_root=self.mesh, hb_epoch=32)
