@@ -407,7 +407,7 @@ FRAME_INGEST_FAILED="FRAME_INGEST_FAILED"
 FRAME_DISPATCH_IO_FAILED="FRAME_DISPATCH_IO_FAILED"
 
 #: ``process_boundary.py``'s exit status for a fault writing its own state.
-PROCESS_BOUNDARY_WRITE_FAULT=75
+PROCESS_BOUNDARY_WRITE_FAULT=75  # OWN_STATE_WRITE_FAULT_EXIT
 
 class OwnStateWriteFailed(RuntimeError):
     """A fault writing this repository's own state, raised where no ledger class applies."""
@@ -432,6 +432,14 @@ def own_state_fault(error:BaseException)->bool:
     if isinstance(error,RuntimeError) and "lost_comparison" in str(error).lower():
         return True
     return isinstance(error,ValueError) and str(error) in OWN_STATE_COLLISIONS
+
+#: The exit status of an entrypoint whose own write faulted (B-P36q, F-WRITER-TRACE): retry it.
+OWN_STATE_WRITE_FAULT_EXIT=75
+
+def own_state_write_exit(error:BaseException, retry_entrypoint:str)->int:
+    """Print the six-field, non-terminal write-fault record for a CLI and return its exit status. No traceback."""
+    print(json.dumps(own_state_write_refusal(error,retry_entrypoint),sort_keys=True))
+    return OWN_STATE_WRITE_FAULT_EXIT
 
 def own_state_write_refusal(error:BaseException, retry_entrypoint:str)->dict[str,Any]:
     """The six-field, non-terminal refusal for a fault writing this repository's own state.
@@ -948,6 +956,8 @@ def consume_and_respond(repo_root:Path, *, mesh_root:Path|None=None, seen:set[st
         packet=recover_packet(item["frame"])
         payload=packet.get("payload") or {}
         message_class=payload.get("message_class")
+        # A request whose response another request already holds is refused before it is consumed.
+        refuse_response_collision(repo_root,packet)
         result=ingest_frame(repo_root,item["frame"],mesh_root=mesh_root,hb_epoch=epoch,explicit=False)
         response_publication=None
         if epoch is None:
@@ -1070,6 +1080,8 @@ def _write_json_atomic(path:Path, value:dict[str,Any])->Path:
     try:
         with os.fdopen(fd,"w") as stream:
             stream.write(json.dumps(value,indent=2,sort_keys=True)+"\n")
+            stream.flush()
+            os.fsync(stream.fileno())
         os.replace(temp,path)
     finally:
         if os.path.exists(temp):
@@ -1092,11 +1104,19 @@ def _write_once_marker(marker_path:Path, marker:dict[str,Any])->Path:
 RESPONSES_DIR="resident-runtime/federation/responses.d"
 
 RESPONSE_ID_COLLISION="RESPONSE_ID_COLLISION"
+COMMUNICATION_ID_COLLISION="COMMUNICATION_ID_COLLISION"
 
 class ResponseIdCollision(ValueError):
-    """Another request already holds this response: refused six-field, never handed the earlier answer."""
+    """Another request already holds this response: refused six-field, never handed the earlier answer.
+
+    RESPONSE_ID_COLLISION when the same request packet id arrives with other
+    content; COMMUNICATION_ID_COLLISION when a different request shares the
+    communication id its response is named by.
+    """
     def __init__(self, request:dict[str,Any], held:dict[str,Any])->None:
-        self.refusal={"disposition":"FAIL_CLOSED","failure_code":RESPONSE_ID_COLLISION,
+        code=(RESPONSE_ID_COLLISION if held.get("request_packet_id")==request.get("packet_id")
+              else COMMUNICATION_ID_COLLISION)
+        self.refusal={"disposition":"FAIL_CLOSED","failure_code":code,
                       "failed_predicate":"ONE_RESPONSE_ANSWERS_ONE_REQUEST",
                       "detail":"request "+str(request.get("packet_id"))+" ("+sha(request)+") would take the response "
                                "already built for request "+str(held.get("request_packet_id"))+" ("
@@ -1106,7 +1126,34 @@ class ResponseIdCollision(ValueError):
                       "owning_existing_goal":HB_EPOCH_OWNING_EXISTING_GOAL,
                       "next_attempt":"none for this request; the earlier response stands",
                       "derived_from_clock":False,"consequence_committed":False}
-        super().__init__(RESPONSE_ID_COLLISION+": "+self.refusal["detail"])
+        super().__init__(code+": "+self.refusal["detail"])
+
+def _response_index(repo_root:Path, kind:str, packet_id:Any)->Path:
+    return repo_root/RESPONSES_DIR/(kind+"-"+hashlib.sha256(str(packet_id).encode()).hexdigest()+".json")
+
+def _response_ids(request:dict[str,Any])->list[str]:
+    """The packet ids a response to ``request`` is published under, known before it is consumed."""
+    payload=request.get("payload") or {}
+    ids=[str(request.get("packet_id"))+":response"]
+    if payload.get("message_class") in {"ecosystem.monitor.request","ecosystem.work.request","ecosystem.communication"}:
+        ids.append(str(payload.get("communication_id"))+":response:"
+                   +organization_slug(str((request.get("destination") or {}).get("org"))))
+    return ids
+
+def refuse_response_collision(repo_root:Path, request:dict[str,Any], response_ids:list[str]|None=None)->None:
+    """Raise ResponseIdCollision if another request already holds this request's response. Nothing is written.
+
+    Run before a request is consumed, so a request that cannot be answered is
+    refused before anything is recorded for it.
+    """
+    request_sha=sha(request)
+    paths=[_response_index(repo_root,"request",request.get("packet_id"))]
+    paths+=[_response_index(repo_root,"response",rid) for rid in (response_ids or _response_ids(request))]
+    for path in paths:
+        held=_existing_json(path)
+        if isinstance(held,dict) and (held.get("request_packet_id")!=request.get("packet_id")
+                                      or held.get("request_sha256")!=request_sha):
+            raise ResponseIdCollision(request,held)
 
 def response_frame_once(repo_root:Path, request:dict[str,Any], response:dict[str,Any], *,
                         now_ns:int)->tuple[dict[str,Any],dict[str,Any]]:
@@ -1117,25 +1164,17 @@ def response_frame_once(repo_root:Path, request:dict[str,Any], response:dict[str
     frame again, never a second response. The stored response is indexed by
     the request packet id and by the response packet id, and is reused only
     for the same request (packet id and digest): any other request meeting
-    either index is RESPONSE_ID_COLLISION and is never handed it.
+    either index is refused (``refuse_response_collision``) and never handed it.
     """
-    directory=repo_root/RESPONSES_DIR
-    request_sha=sha(request)
-    keys=[directory/("request-"+hashlib.sha256(str(request.get("packet_id")).encode()).hexdigest()+".json"),
-          directory/("response-"+hashlib.sha256(str(response.get("packet_id")).encode()).hexdigest()+".json")]
-    for path in keys:
-        held=_existing_json(path)
-        if not isinstance(held,dict):
-            continue
-        if held.get("request_packet_id")!=request.get("packet_id") or held.get("request_sha256")!=request_sha:
-            raise ResponseIdCollision(request,held)
-        record=held
-        break
-    else:
-        record={"request_packet_id":request.get("packet_id"),"request_sha256":request_sha,
+    refuse_response_collision(repo_root,request,[str(response.get("packet_id"))])
+    paths=[_response_index(repo_root,"request",request.get("packet_id")),
+           _response_index(repo_root,"response",response.get("packet_id"))]
+    record=next((held for held in map(_existing_json,paths) if isinstance(held,dict)),None)
+    if record is None:
+        record={"request_packet_id":request.get("packet_id"),"request_sha256":sha(request),
                 "packet":response,"frame":carrier_frame(response,now_ns=now_ns)}
-    directory.mkdir(parents=True,exist_ok=True)
-    for path in keys:
+    paths[0].parent.mkdir(parents=True,exist_ok=True)
+    for path in paths:
         if _existing_json(path)!=record:
             _write_json_atomic(path,record)
     return record["packet"],record["frame"]

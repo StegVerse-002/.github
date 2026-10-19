@@ -18,7 +18,7 @@ GW=importlib.util.module_from_spec(GWSPEC); GWSPEC.loader.exec_module(GW)
 
 EPOCH_RETRY_ENTRYPOINT="resident-runtime/ecosystem_control.py (--hb-epoch, or "+K.SUPPLIED_EPOCH_ENV+")"
 
-def main(argv=None)->int:
+def _main(argv=None)->int:
     ap=argparse.ArgumentParser(description=__doc__.splitlines()[0])
     # The raw text goes to the shared epoch rule: argparse's int() would take
     # "+33", " 33" or fullwidth digits as 33.
@@ -85,6 +85,22 @@ def main(argv=None)->int:
       "published_count":out["published_count"]
     },indent=2,sort_keys=True))
     return 0
+
+
+def main(argv=None)->int:
+    """Run one operator command.
+
+    F-WRITER-TRACE: a fault writing this repository's own state is a six-field,
+    non-terminal record with exit status K.OWN_STATE_WRITE_FAULT_EXIT, never a
+    raw OSError or a traceback.
+    """
+    try:
+        return _main(argv)
+    except Exception as exc:
+        if not K.own_state_fault(exc):
+            raise
+        return K.own_state_write_exit(exc, EPOCH_RETRY_ENTRYPOINT)
+
 
 if __name__=="__main__":
     sys.exit(main())

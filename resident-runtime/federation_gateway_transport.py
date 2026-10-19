@@ -222,6 +222,8 @@ def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str
         }
     packet = K.recover_packet(frame)
     try:
+        # A request whose response another request already holds is refused before it is consumed.
+        K.refuse_response_collision(repo_root, packet)
         result = K.ingest_frame(repo_root, frame, hb_epoch=frame_epoch, explicit=False)
     except (Exception, SystemExit) as error:
         # B-P36o: the frame's failure is its refusal; it is acknowledged BLOCKED, not redelivered.

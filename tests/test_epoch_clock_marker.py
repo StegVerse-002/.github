@@ -1278,7 +1278,8 @@ class ContentCollisionIsRefusedBeforeAnything(ConsumingRoutes):
         self.publish_inbound(intr, diagnostic("second"), "shared-id", epoch=SUPPLIED + 1)
         refused, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
         self.assertEqual(refused["result"]["status"], "REFUSED_QUARANTINED")
-        self.assertRefusal(refused["result"]["refusal"], "PACKET_ID_BINDS_ANOTHER_DIAGNOSTIC")
+        # The kernel refuses it before consuming (its response is held by the first request).
+        self.assertRefusal(refused["result"]["refusal"], "RESPONSE_ID_COLLISION")
         self.assertIsNone(refused["response_publication"])
         self.assertEqual(len(self.peer_frames()), 1)
         self.assertEqual(sorted(json.dumps(r, sort_keys=True) for r in self.receipts()), receipts)
@@ -1288,6 +1289,14 @@ class ContentCollisionIsRefusedBeforeAnything(ConsumingRoutes):
         self.assertEqual(replayed["result"]["status"], "CONSUMED")
         self.assertEqual(sorted(json.dumps(r, sort_keys=True) for r in self.receipts()), receipts)
         self.assertEqual(len(self.peer_frames()), 1)
+        # The receiving operation refuses it too, six-field, before any write.
+        ingress = _load("marker_intr_collision", self.root, "resident-runtime/intr_destination_ingress.py")
+        registry = json.loads((self.root / "org-boundary/registry/services.json").read_text())
+        with self.assertRaises(ValueError) as collided:
+            ingress.receive(diagnostic("second"), registry=registry, packet_id="shared-id",
+                            hb_epoch=SUPPLIED)
+        self.assertRefusal(collided.exception.refusal, "PACKET_ID_BINDS_ANOTHER_DIAGNOSTIC")
+        self.assertEqual(sorted(json.dumps(r, sort_keys=True) for r in self.receipts()), receipts)
 
 
 class ResponseOnceIsKeyedToItsRequest(ConsumingRoutes):
@@ -1306,12 +1315,14 @@ class ResponseOnceIsKeyedToItsRequest(ConsumingRoutes):
         answered, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
         self.assertEqual(answered["result"]["status"], "CONSUMED")
         response, = self.peer_frames()
-        for packet_id, subject in (("request-b", "b"), ("request-a", "a, rewritten")):
+        for packet_id, subject, code in (("request-b", "b", "COMMUNICATION_ID_COLLISION"),
+                                         ("request-a", "a, rewritten", "RESPONSE_ID_COLLISION")):
             with self.subTest(request=packet_id):
                 self.communication(packet_id, "shared-communication", subject)
                 refused, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+                # Refused before it is consumed: nothing is recorded for it.
                 self.assertEqual(refused["result"]["status"], "REFUSED_QUARANTINED")
-                self.assertRefusal(refused["result"]["refusal"], "RESPONSE_ID_COLLISION")
+                self.assertRefusal(refused["result"]["refusal"], code)
                 self.assertIsNone(refused["response_publication"])
                 self.assertEqual(self.peer_frames(), [response])
 
@@ -1382,6 +1393,66 @@ class MultiStepWritesResume(ConsumingRoutes):
         with (self.self_char / "ORG_BOUNDARY_RECEIPTS.live.jsonl").open("a") as handle:
             handle.write('{"kind":"RESULT_BO')
         self.assertCompletedOnce()
+
+
+class WriterEntrypointsNeverTrace(ConsumingRoutes):
+    """F-WRITER-TRACE: an epoch-taking entrypoint whose own write faults prints a six-field, non-terminal record."""
+
+    def run_entrypoint(self, relative, *argv, fail_at=None, env=None):
+        environment = {**os.environ, **(env or {})}
+        if fail_at is not None:
+            environment["STEGVERSE_TEST_FSYNC_FAIL_AT"] = str(fail_at)
+        return subprocess.run([sys.executable, str(self.root / relative), *argv], capture_output=True, text=True,
+                              env=environment, check=False)
+
+    def assertWriteFault(self, completed):
+        self.assertNotIn("Traceback", completed.stderr)
+        self.assertEqual(completed.returncode, 75, completed.stdout + completed.stderr)
+        refusal = json.loads(completed.stdout.strip().splitlines()[-1])
+        self.assertRefusal(refusal, "FRAME_DISPATCH_IO_FAILED")
+        self.assertIs(refusal["terminal"], False)
+
+    def test_each_writer_entrypoint_reports_its_own_write_fault_and_then_succeeds(self):
+        payload = self.work / "diagnostic.json"
+        payload.write_text(json.dumps(diagnostic("writer-trace")))
+        registry = self.root / "org-boundary/registry/services.json"
+        cases = (
+            ("emit", ".stegverse/transition-ledger/emit.py",
+             ("--transition-id", "trace", "--transition-class", "PROBE", "--predecessor-state-sha256", "sha256:" + "a" * 64,
+              "--successor-state-sha256", "sha256:" + "b" * 64, "--hb-epoch", str(SUPPLIED))),
+            ("receive", "resident-runtime/intr_destination_ingress.py",
+             ("--payload", str(payload), "--registry", str(registry), "--packet-id", "writer-trace",
+              "--hb-epoch", str(SUPPLIED))),
+            ("self-closure", "resident-runtime/intr_destination_ingress.py",
+             ("--self-closure", "--communication-id", "writer-trace-closure", "--mesh-root", str(self.mesh),
+              "--hb-epoch", str(SUPPLIED))),
+            # An empty mesh, so the first durable write is the cycle's own record.
+            ("cycle", "resident-runtime/federation_cycle.py",
+             ("--hb-epoch", str(SUPPLIED), "--out", str(self.work / "latest-cycle.json")),
+             {"STEGVERSE_ORG_FEDERATION_ROOT": str(self.work / "empty-mesh")}),
+            ("control", "resident-runtime/ecosystem_control.py",
+             ("--hb-epoch", str(SUPPLIED), "send-message", "--subject", "s", "--body-json", "{}",
+              "--communication-id", "writer-trace-control")),
+        )
+        for label, relative, argv, *env in cases:
+            with self.subTest(entrypoint=label):
+                env = env[0] if env else None
+                self.assertWriteFault(self.run_entrypoint(relative, *argv, fail_at=1, env=env))
+                completed = self.run_entrypoint(relative, *argv, env=env)
+                self.assertNotIn("Traceback", completed.stderr)
+                self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_the_organization_writer_reports_its_own_write_fault(self):
+        emit = _load("marker_emit_trace", self.root, ".stegverse/transition-ledger/emit.py")
+        source = self.work / "source-receipt.json"
+        source.write_text(json.dumps(emit.append("trace-source", "PROBE", "sha256:" + "a" * 64, "sha256:" + "b" * 64,
+                                                 {}, hb_epoch=SUPPLIED)))
+        argv = ("--repo-receipt", str(source), "--predecessor-org-state-sha256", "sha256:" + "c" * 64,
+                "--successor-org-state-sha256", "sha256:" + "d" * 64, "--hb-epoch", str(SUPPLIED))
+        self.assertWriteFault(self.run_entrypoint("resident-runtime/aggregate_repo_transition.py", *argv, fail_at=1))
+        completed = self.run_entrypoint("resident-runtime/aggregate_repo_transition.py", *argv)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertEqual(len(list((self.org_ledger / "receipts").glob("*.json"))), 1)
 
 
 class EcosystemControlStampsTheSuppliedEpoch(ConsumingRoutes):

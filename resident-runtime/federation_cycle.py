@@ -48,7 +48,7 @@ def cycle(hb_epoch:int, *, gateway:bool)->dict:
       "transport":"LOCAL_SPOOL_FALLBACK"
     }
 
-def main(argv=None)->int:
+def _main(argv=None)->int:
     ap=argparse.ArgumentParser(description=__doc__.splitlines()[0])
     # The raw text goes to the shared epoch rule: argparse's int() would take
     # "+33", " 33" or fullwidth digits as 33.
@@ -66,9 +66,25 @@ def main(argv=None)->int:
         print(json.dumps(exc.refusal,sort_keys=True))
         return 1
     a.out.parent.mkdir(parents=True,exist_ok=True)
-    a.out.write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
+    K._write_json_atomic(a.out,receipt)
     print(json.dumps(receipt,sort_keys=True))
     return 0
+
+
+def main(argv=None)->int:
+    """Run one federation cycle at the supplied epoch.
+
+    F-WRITER-TRACE: a fault writing this repository's own state is a six-field,
+    non-terminal record with exit status K.OWN_STATE_WRITE_FAULT_EXIT, never a
+    raw OSError or a traceback.
+    """
+    try:
+        return _main(argv)
+    except Exception as exc:
+        if not K.own_state_fault(exc):
+            raise
+        return K.own_state_write_exit(exc, EPOCH_RETRY_ENTRYPOINT)
+
 
 if __name__=="__main__":
     sys.exit(main())

@@ -198,7 +198,7 @@ def append(transition_id, transition_class, predecessor_state_sha256, successor_
     raise ledger_store.LedgerWriteFailed("LEDGER_APPEND_LOST_COMPARISON", "REPO_LEDGER_APPEND_CONTENTION_EXHAUSTED")
 
 
-def main():
+def _main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--transition-id", required=True)
     parser.add_argument("--transition-class", required=True)
@@ -221,11 +221,23 @@ def main():
     except RepoLedgerEpochRefused as exc:
         print(json.dumps(exc.refusal, sort_keys=True))
         raise SystemExit(1)
-    except (ledger_store.LedgerWriteFailed, OSError) as exc:
-        print(json.dumps(kernel.own_state_write_refusal(exc, EPOCH_RETRY_ENTRYPOINT), sort_keys=True))
-        raise SystemExit(1)
     print(json.dumps(record, sort_keys=True))
 
 
+def main():
+    """Append one repository receipt from the command line.
+
+    F-WRITER-TRACE: a fault writing this repository's own state is a six-field,
+    non-terminal record with exit status kernel.OWN_STATE_WRITE_FAULT_EXIT, never a
+    raw OSError or a traceback.
+    """
+    try:
+        return _main()
+    except Exception as exc:
+        if not kernel.own_state_fault(exc):
+            raise
+        return kernel.own_state_write_exit(exc, EPOCH_RETRY_ENTRYPOINT)
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

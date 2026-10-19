@@ -33,7 +33,7 @@ def make_receipt(kind, base, previous_receipt_id, *, hb_epoch=None, disposition=
 
 #: The exit status of a fault writing this boundary's own state (B-P36q). The
 #: caller retries, and the interrupted history resumes; nothing is refused for good.
-EX_WRITE_FAULT=75
+EX_WRITE_FAULT=kernel.OWN_STATE_WRITE_FAULT_EXIT
 
 def append_live_receipt(path, receipt):
     if path is None:
@@ -192,11 +192,12 @@ def endpoint_result(env,svc,envelope_path):
 def main():
     try:
         run()
-    except OSError as error:
-        # A fault writing this boundary's own state: six-field, non-terminal. The
-        # caller retries and the interrupted history resumes (B-P36q).
-        print(json.dumps(kernel.own_state_write_refusal(error,EPOCH_RETRY_ENTRYPOINT),sort_keys=True))
-        sys.exit(EX_WRITE_FAULT)
+    except Exception as error:
+        # A fault writing this boundary's own state: six-field, non-terminal, no
+        # traceback. The caller retries and the interrupted history resumes (B-P36q).
+        if not kernel.own_state_fault(error):
+            raise
+        sys.exit(kernel.own_state_write_exit(error,EPOCH_RETRY_ENTRYPOINT))
 
 def run():
     ap=argparse.ArgumentParser()

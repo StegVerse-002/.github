@@ -611,7 +611,7 @@ def close(destination_organization: str, packet_id: str, communication_id: str, 
     }
 
 
-def main() -> int:
+def _main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--destination-organization", required=True)
     parser.add_argument("--payload", type=Path)
@@ -653,6 +653,21 @@ def main() -> int:
         args.out.write_text(rendered, encoding="utf-8")
     print(json.dumps(result, sort_keys=True))
     return 0 if result.get("disposition") in {ALLOW, PENDING} else 1
+
+
+def main() -> int:
+    """Emit one crossing, or close it.
+
+    F-WRITER-TRACE: a fault writing this repository's own state is a six-field,
+    non-terminal record with exit status kernel.OWN_STATE_WRITE_FAULT_EXIT, never a
+    raw OSError or a traceback.
+    """
+    try:
+        return _main()
+    except Exception as exc:
+        if not kernel.own_state_fault(exc):
+            raise
+        return kernel.own_state_write_exit(exc, EMIT_EPOCH_RETRY_ENTRYPOINT)
 
 
 if __name__ == "__main__":
