@@ -192,8 +192,8 @@ def endpoint_result(env,svc,envelope_path):
 def main():
     # A fault writing this boundary's own state is six-field and non-terminal, with
     # no traceback; the caller retries and the interrupted history resumes (B-P36q).
-    # Bad input is a six-field refusal (F-WRITER-TRACE).
-    return kernel.run_writer_cli(run,EPOCH_RETRY_ENTRYPOINT)
+    # Bad input is a terminal six-field refusal with exit 65 (F-WRITER-TRACE, PB-EXIT-SPLIT).
+    return kernel.run_writer_cli(run,EPOCH_RETRY_ENTRYPOINT,input_exit=kernel.PROCESS_BOUNDARY_INPUT_FAULT)
 
 def run():
     ap=argparse.ArgumentParser()

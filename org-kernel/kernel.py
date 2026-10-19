@@ -282,9 +282,12 @@ def dispatch(root:Path, packet:dict[str,Any], *, mesh_root:Path|None=None,
             envelope.write_text(json.dumps(packet,indent=2,sort_keys=True)+"\n")
             completed=subprocess.run(["python3",str(processor),"--envelope",str(envelope),"--out",str(out),
                                       "--hb-epoch",str(hb_epoch)],cwd=root,capture_output=True,text=True,check=False)
+            # PB-EXIT-SPLIT: 75 is this boundary's own write fault, non-terminal, and the
+            # history resumes on retry (B-P36q); 65 is a bad input, terminal and quarantined.
             if completed.returncode==PROCESS_BOUNDARY_WRITE_FAULT:
-                # The boundary could not write its own state; its history resumes on retry (B-P36q).
                 raise OwnStateWriteFailed("PROCESS_BOUNDARY_WRITE_FAULT",(completed.stdout or completed.stderr)[-512:])
+            if completed.returncode==PROCESS_BOUNDARY_INPUT_FAULT:
+                raise ProcessBoundaryInputFault((completed.stdout or completed.stderr)[-512:])
             if completed.returncode!=0 or not out.is_file():
                 raise ValueError("endpoint_adapter_execution_failed:"+completed.stderr[-512:])
             result=json.loads(out.read_text())
@@ -408,6 +411,17 @@ FRAME_DISPATCH_IO_FAILED="FRAME_DISPATCH_IO_FAILED"
 
 #: ``process_boundary.py``'s exit status for a fault writing its own state.
 PROCESS_BOUNDARY_WRITE_FAULT=75  # OWN_STATE_WRITE_FAULT_EXIT
+#: ``process_boundary.py``'s exit status for a bad input: the frame's fault, terminal (DC#10).
+PROCESS_BOUNDARY_INPUT_FAULT=65
+
+class ProcessBoundaryInputFault(ValueError):
+    """process_boundary refused its input (exit 65): six-field FRAME_INGEST_FAILED, terminal, quarantined."""
+    def __init__(self, detail:str)->None:
+        super().__init__("PROCESS_BOUNDARY_INPUT_FAULT: "+detail)
+        self.refusal={**_epoch_refusal(FRAME_INGEST_FAILED,"process_boundary refused its input: "+detail,
+                                       INGEST_EPOCH_RETRY_ENTRYPOINT,
+                                       repair="the sender re-emits the crossing as a frame this boundary can process"),
+                      "failed_predicate":"PROCESS_BOUNDARY_INPUT_FAULT","terminal":True}
 
 class OwnStateWriteFailed(RuntimeError):
     """A fault writing this repository's own state, raised where no ledger class applies."""
@@ -484,13 +498,14 @@ def parse_json_input(text:Any, *, argument:str, retry_entrypoint:str, expect:typ
         raise InputRefused(input_refusal(error,argument,retry_entrypoint)) from None
     return _expect(value,expect,argument,retry_entrypoint)
 
-def run_writer_cli(main:Any, retry_entrypoint:str)->int:
+def run_writer_cli(main:Any, retry_entrypoint:str, *, input_exit:int=2)->int:
     """Run a writer's command-line body so it never ends in a traceback (F-WRITER-TRACE).
 
     A fault writing this repository's own state is the six-field, non-terminal
     FRAME_DISPATCH_IO_FAILED with exit status OWN_STATE_WRITE_FAULT_EXIT. A
     six-field refusal raised by the writer is printed with exit status 1. Any
-    other error is bad input: six-field ENTRYPOINT_INPUT_REFUSED, exit status 2.
+    other error is bad input: six-field ENTRYPOINT_INPUT_REFUSED, terminal, exit
+    status ``input_exit`` (2; process_boundary uses PROCESS_BOUNDARY_INPUT_FAULT, 65).
     ``SystemExit`` (argparse, an explicit refusal) passes through.
     """
     try:
@@ -501,13 +516,13 @@ def run_writer_cli(main:Any, retry_entrypoint:str)->int:
         carried=getattr(error,"refusal",None)
         if isinstance(carried,dict) and carried.get("failure_code"):
             print(json.dumps(carried,sort_keys=True))
-            return 2 if carried.get("failure_code")==ENTRYPOINT_INPUT_REFUSED else 1
+            return input_exit if carried.get("failure_code")==ENTRYPOINT_INPUT_REFUSED else 1
         refusal=_epoch_refusal(ENTRYPOINT_INPUT_REFUSED,type(error).__name__+": "+str(error),retry_entrypoint,
                                repair="the caller supplies well-formed input; nothing was written for it")
         refusal["failed_predicate"]=type(error).__name__
         refusal["terminal"]=True
         print(json.dumps(refusal,sort_keys=True))
-        return 2
+        return input_exit
     return 0 if status is None else status
 
 def own_state_write_refusal(error:BaseException, retry_entrypoint:str)->dict[str,Any]:

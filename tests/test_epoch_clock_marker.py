@@ -1668,6 +1668,66 @@ class ResidentExecutorRoutesRefuseBeforeWriting(ConsumingRoutes):
         self.assertNoUnmarkedClock()
 
 
+class ProcessBoundaryExitSplit(ConsumingRoutes):
+    """PB-EXIT-SPLIT: process_boundary's own write fault (75) and bad input (65) never share a disposition."""
+
+    def capability_frame(self, packet_id):
+        return self.publish_inbound(THIS.lower() + ".capability-discovery", {"operation": "LIST_CAPABILITIES"},
+                                    packet_id, epoch=SUPPLIED)
+
+    def boundary_exits(self, status):
+        real = subprocess.run
+
+        def run(command, *args, **kwargs):
+            if any(str(part).endswith("process_boundary.py") for part in command):
+                return subprocess.CompletedProcess(command, status, stdout='{"failure_code": "probe"}', stderr="")
+            return real(command, *args, **kwargs)
+        return mock.patch.object(self.K.subprocess, "run", run)
+
+    def seen_markers(self):
+        directory = self.root / "resident-runtime/federation/seen.d"
+        return sorted(directory.glob("*.json")) if directory.is_dir() else []
+
+    def test_exit_75_leaves_the_frame_pending_and_it_is_consumed_once(self):
+        self.capability_frame("pb-75")
+        with self.boundary_exits(75):
+            pending, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertEqual(pending["result"]["status"], "PENDING_DISPATCH_IO_FAILED")
+        self.assertRefusal(pending["result"]["refusal"], "FRAME_DISPATCH_IO_FAILED")
+        self.assertIs(pending["result"]["refusal"]["terminal"], False)
+        self.assertEqual(pending["result"]["refusal"]["failed_predicate"], "PROCESS_BOUNDARY_WRITE_FAULT")
+        self.assertEqual(self.seen_markers(), [])
+        consumed, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertEqual(consumed["result"]["status"], "CONSUMED")
+        self.assertEqual(len(self.seen_markers()), 1)
+        self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
+
+    def test_exit_65_quarantines_the_frame_terminally(self):
+        self.capability_frame("pb-65")
+        with self.boundary_exits(65):
+            refused, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertEqual(refused["result"]["status"], "REFUSED_QUARANTINED")
+        refusal = refused["result"]["refusal"]
+        self.assertRefusal(refusal, "FRAME_INGEST_FAILED")
+        self.assertIs(refusal["terminal"], True)
+        self.assertEqual(refusal["failed_predicate"], "PROCESS_BOUNDARY_INPUT_FAULT")
+        marker, = self.seen_markers()
+        self.assertEqual(json.loads(marker.read_text())["failure_code"], "FRAME_REFUSED_QUARANTINED")
+        self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
+
+    def test_process_boundary_exits_65_on_bad_input(self):
+        bad = self.work / "bad.json"
+        bad.write_text("{not json")
+        completed = subprocess.run([sys.executable, str(self.root / "org-boundary/runtime/process_boundary.py"),
+                                    "--envelope", str(bad), "--out", str(self.work / "out.json"),
+                                    "--hb-epoch", str(SUPPLIED)], capture_output=True, text=True, check=False)
+        self.assertNotIn("Traceback", completed.stderr)
+        self.assertEqual(completed.returncode, 65)
+        refusal = json.loads(completed.stdout.strip().splitlines()[-1])
+        self.assertRefusal(refusal, "ENTRYPOINT_INPUT_REFUSED")
+        self.assertIs(refusal["terminal"], True)
+
+
 class EcosystemControlStampsTheSuppliedEpoch(ConsumingRoutes):
     """EPOCH_FREE is not provable for ecosystem_control: every route that stamps takes the supplied epoch."""
 
