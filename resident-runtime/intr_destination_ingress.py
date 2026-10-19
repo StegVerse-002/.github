@@ -349,17 +349,9 @@ def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
         result["failed_predicate"] = emitted.get("failed_predicate")
         result["detail"] = emitted.get("detail")
         return result
-    # The kernel's dispatch does not carry an epoch to the receiving operation,
-    # so the supplied one travels with this process for the consume only.
-    previous_epoch = os.environ.get(SUPPLIED_EPOCH_ENV)
-    os.environ[SUPPLIED_EPOCH_ENV] = str(hb_epoch)
-    try:
-        consumed_frames = kernel_mod.consume_addressed_frames(ROOT, mesh_root=mesh_root)
-    finally:
-        if previous_epoch is None:
-            os.environ.pop(SUPPLIED_EPOCH_ENV, None)
-        else:
-            os.environ[SUPPLIED_EPOCH_ENV] = previous_epoch
+    # The kernel's dispatch carries the supplied epoch to the receiving operation.
+    consumed_frames = kernel_mod.consume_addressed_frames(ROOT, mesh_root=mesh_root,
+                                                          hb_epoch=hb_epoch)
     if len(consumed_frames) != 1 or consumed_frames[0]["result"].get("status") != "CONSUMED":
         result["failed_predicate"] = "SELF_DIAGNOSTIC_IS_CONSUMED_AT_THIS_ADDRESS"
         result["detail"] = "the emitted frame was not consumed here"
@@ -375,9 +367,7 @@ def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
         result["detail"] = operation.get("detail")
         return result
     response = kernel_mod.build_control_response(consumed["packet"], execution)
-    now_ns = (kernel_mod.HB_ANCHOR_UNIX_NS
-              + (hb_epoch - kernel_mod.HB_ANCHOR_EPOCH) * kernel_mod.HB_PERIOD_NS)
-    kernel_mod.publish_packet(response, root=mesh_root, now_ns=now_ns)
+    kernel_mod.publish_packet(response, root=mesh_root, now_ns=kernel_mod.epoch_now_ns(hb_epoch))
     closed = egress.close(
         origin, emitted["packet_id"], communication_id, root=ROOT,
         mesh_root=mesh_root, hb_epoch=hb_epoch)

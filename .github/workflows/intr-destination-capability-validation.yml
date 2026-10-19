@@ -15,6 +15,10 @@ on:
       - '.stegverse/transition-ledger/emit.py'
       - 'tests/test_intr_destination_capability.py'
       - 'tests/test_ledger_writer_supplied_epoch.py'
+      - 'tests/test_epoch_clock_marker.py'
+      - 'org-boundary/runtime/process_boundary.py'
+      - 'resident-runtime/federation_cycle.py'
+      - 'resident-runtime/federation_gateway_transport.py'
       - 'docs/INTR_DESTINATION_CAPABILITY_MIRROR_HANDOFF.md'
       - '.github/workflows/intr-destination-capability-validation.yml'
   push:
@@ -31,6 +35,10 @@ on:
       - '.stegverse/transition-ledger/emit.py'
       - 'tests/test_intr_destination_capability.py'
       - 'tests/test_ledger_writer_supplied_epoch.py'
+      - 'tests/test_epoch_clock_marker.py'
+      - 'org-boundary/runtime/process_boundary.py'
+      - 'resident-runtime/federation_cycle.py'
+      - 'resident-runtime/federation_gateway_transport.py'
       - 'docs/INTR_DESTINATION_CAPABILITY_MIRROR_HANDOFF.md'
       - '.github/workflows/intr-destination-capability-validation.yml'
   workflow_dispatch:
@@ -78,3 +86,9 @@ jobs:
           STEGVERSE_REPO_LEDGER_ROOT: ${{ runner.temp }}/repo-ledger
           STEGVERSE_ORG_LEDGER_ROOT: ${{ runner.temp }}/org-ledger
         run: python -m unittest tests.test_ledger_writer_supplied_epoch -v
+
+      # The clock is fixed and counted in every subprocess. Each consuming route
+      # refuses an absent epoch before any write, stamps a supplied one, and
+      # leaves no clock value unmarked.
+      - name: Validate no consuming route takes its time from the clock
+        run: python -m unittest tests.test_epoch_clock_marker -v

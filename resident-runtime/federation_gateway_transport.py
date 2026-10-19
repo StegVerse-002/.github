@@ -2,7 +2,6 @@
 """Outbound-only Service Gateway transport for organization federation."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import importlib.util
 import json
 import os
@@ -83,14 +82,16 @@ def fetch_frame(organization: str) -> dict[str, Any]:
     )
 
 
-def acknowledge_frame(organization: str, frame: dict[str, Any], state: str) -> dict[str, Any]:
+def acknowledge_frame(organization: str, frame: dict[str, Any], state: str, *,
+                      hb_epoch: int) -> dict[str, Any]:
+    """Acknowledge a fetched frame at the cycle's supplied epoch, never a clock."""
     ack = {
         "schema": "stegverse.org-federation-rendezvous.ack/v1",
         "organization": organization,
         "packet_id": frame["packet_id"],
         "frame_sha256": frame["frame_sha256"],
         "state": state,
-        "observed_at": datetime.now(timezone.utc).isoformat(),
+        "observed_at": f"hb-epoch:{hb_epoch}",
         "gateway_execution_authority": "NONE",
         "authority_effect": "NONE_OBSERVATION_ONLY",
     }
@@ -172,7 +173,18 @@ def _persist_response(repo_root: Path, packet: dict[str, Any], execution_result:
     return path
 
 
-def resident_gateway_cycle(repo_root: Path) -> dict[str, Any]:
+CYCLE_EPOCH_RETRY_ENTRYPOINT = ("resident-runtime/federation_gateway_transport.py::resident_gateway_cycle "
+                                "(hb_epoch=, or " + K.SUPPLIED_EPOCH_ENV + ")")
+
+
+def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str, Any]:
+    """Consume one gateway frame and answer it at the supplied epoch.
+
+    An absent or invalid epoch is refused six-field before the gateway is read,
+    so no response frame or acknowledgement is stamped from a clock.
+    """
+    hb_epoch = K.supplied_epoch(K.caller_epoch(hb_epoch), retry_entrypoint=CYCLE_EPOCH_RETRY_ENTRYPOINT)
+    now_ns = K.epoch_now_ns(hb_epoch)
     registry = K.load_registry(repo_root)
     organization = registry["organization"]
     fetched = fetch_frame(organization)
@@ -189,7 +201,7 @@ def resident_gateway_cycle(repo_root: Path) -> dict[str, Any]:
         raise FederationGatewayTransportError("unexpected gateway fetch state")
     frame = fetched["frame"]
     packet = K.recover_packet(frame)
-    result = K.ingest_frame(repo_root, frame)
+    result = K.ingest_frame(repo_root, frame, hb_epoch=hb_epoch)
     response_emitted = 0
     response_ref = None
     if result.get("status") == "CONSUMED":
@@ -197,7 +209,7 @@ def resident_gateway_cycle(repo_root: Path) -> dict[str, Any]:
         message_class = (packet.get("payload") or {}).get("message_class")
         if message_class in {"ecosystem.monitor.request", "ecosystem.work.request", "ecosystem.communication"}:
             response = K.build_control_response(packet, execution)
-            response_frame = K.carrier_frame(response)
+            response_frame = K.carrier_frame(response, now_ns=now_ns)
             submit_frame(response_frame)
             response_emitted = 1
             response_ref = response_frame["frame_sha256"]
@@ -207,14 +219,14 @@ def resident_gateway_cycle(repo_root: Path) -> dict[str, Any]:
             service = next((svc for svc in registry["services"] if svc.get("service_id") == packet["destination"]["service"]), None)
             if service and service.get("endpoint_adapter"):
                 response = K.build_endpoint_response(packet, execution)
-                response_frame = K.carrier_frame(response)
+                response_frame = K.carrier_frame(response, now_ns=now_ns)
                 submit_frame(response_frame)
                 response_emitted = 1
                 response_ref = response_frame["frame_sha256"]
         ack_state = "CONSUMED"
     else:
         ack_state = "BLOCKED"
-    ack = acknowledge_frame(organization, frame, ack_state)
+    ack = acknowledge_frame(organization, frame, ack_state, hb_epoch=hb_epoch)
     return {
         "schema_version": "stegverse.org-federation-gateway-cycle.v1",
         "organization": organization,

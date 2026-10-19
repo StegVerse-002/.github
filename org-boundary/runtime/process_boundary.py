@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-import argparse, hashlib, json, os, subprocess, tempfile
-from datetime import datetime, timezone
+import argparse, hashlib, importlib.util, json, os, subprocess, sys, tempfile
 from pathlib import Path
 
 KINDS=["INGRESS_ACCEPTED","DISPATCHED","CONSUMED","RESULT_BOUND","EGRESS_EMITTED"]
 ROOT=Path(__file__).resolve().parents[2]
+_spec=importlib.util.spec_from_file_location("process_boundary_kernel",ROOT/"org-kernel/kernel.py")
+kernel=importlib.util.module_from_spec(_spec); _spec.loader.exec_module(kernel)
+
+#: A boundary receipt's time is the epoch its caller supplies (``--hb-epoch``,
+#: else ``STEGVERSE_HB_EPOCH``). An absent or invalid one is refused six-field
+#: before anything is written; no clock stands in for it.
+EPOCH_RETRY_ENTRYPOINT="org-boundary/runtime/process_boundary.py (--hb-epoch, or "+kernel.SUPPLIED_EPOCH_ENV+")"
 
 def canon(v): return json.dumps(v,sort_keys=True,separators=(",",":"),ensure_ascii=False,allow_nan=False).encode("utf-8")
 def hid(prefix,v): return prefix+"-"+hashlib.sha256(canon(v)).hexdigest()[:24]
 def load(path): return json.loads(Path(path).read_text())
-def now(): return datetime.now(timezone.utc).isoformat()
-
-def make_receipt(kind, base, previous_receipt_id, *, disposition=None):
+def make_receipt(kind, base, previous_receipt_id, *, hb_epoch=None, disposition=None):
+    hb_epoch=kernel.supplied_epoch(hb_epoch,retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
     subject={**base,"kind":kind,"previous_receipt_id":previous_receipt_id}
     rid=hid(kind.lower(),subject)
     row={
@@ -20,7 +25,7 @@ def make_receipt(kind, base, previous_receipt_id, *, disposition=None):
         "subject":base["service_id"],
         "evidence_hash":hashlib.sha256(canon(subject)).hexdigest(),
         "previous_receipt_id":previous_receipt_id,
-        "observed_at":now(),
+        "observed_at":f"hb-epoch:{hb_epoch}",
     }
     if disposition is not None:
         row["application_disposition"]=disposition
@@ -54,6 +59,10 @@ def build_org_ledger_root(state_root, boundary_bundle):
     receipts=boundary_bundle.get("receipts") or []
     if not receipts:
         raise SystemExit("hierarchical-ledger-org-receipts-missing")
+    # The root takes its time from the last receipt it binds, never a clock.
+    generated_at=receipts[-1].get("observed_at")
+    if not isinstance(generated_at,str) or not generated_at:
+        raise SystemExit("hierarchical-ledger-org-receipt-time-missing")
     ordered={
         "children":[child],
         "organization_receipts":[
@@ -67,7 +76,7 @@ def build_org_ledger_root(state_root, boundary_bundle):
         "scope_type":"organization",
         "scope_id":"StegVerse-002",
         "root_id":"ORG-"+digest({"run_id":run_id,"ordered_root_hash":ordered_root_hash})[:32].upper(),
-        "generated_at":receipts[-1].get("observed_at") or now(),
+        "generated_at":generated_at,
         "run_id":run_id,
         "previous_root_hash":None,
         "range":{
@@ -121,7 +130,15 @@ def main():
     ap.add_argument("--envelope",required=True)
     ap.add_argument("--registry",default="org-boundary/registry/services.json")
     ap.add_argument("--out",required=True)
+    # The raw text goes to the shared epoch rule: argparse's int() would take
+    # "+33", " 33" or fullwidth digits as 33.
+    ap.add_argument("--hb-epoch",default=None)
     a=ap.parse_args()
+    refusal=kernel.writer_epoch_refusal(kernel.caller_epoch(a.hb_epoch),retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
+    if refusal is not None:
+        print(json.dumps(refusal,sort_keys=True))
+        sys.exit(1)
+    hb_epoch=int(kernel.caller_epoch(a.hb_epoch))
     env=load(a.envelope); reg=load(a.registry)
     req=["schema_version","packet_id","direction","origin","destination","carrier","intr_profile","transition","payload","evidence"]
     miss=[k for k in req if k not in env]
@@ -146,9 +163,9 @@ def main():
 
     receipts=[]; prev=None
     if prior_boundary_bundle is None:
-        ingress_receipt=make_receipt("INGRESS_ACCEPTED",base,prev)
+        ingress_receipt=make_receipt("INGRESS_ACCEPTED",base,prev,hb_epoch=hb_epoch)
         receipts.append(ingress_receipt); prev=ingress_receipt["receipt_id"]; append_live_receipt(live_path,ingress_receipt)
-        dispatched_receipt=make_receipt("DISPATCHED",base,prev)
+        dispatched_receipt=make_receipt("DISPATCHED",base,prev,hb_epoch=hb_epoch)
         receipts.append(dispatched_receipt); prev=dispatched_receipt["receipt_id"]; append_live_receipt(live_path,dispatched_receipt)
 
     application_result=endpoint_result(env,svc,a.envelope)
@@ -157,11 +174,11 @@ def main():
         receipts=list(prior_boundary_bundle.get("receipts") or [])
         prev=receipts[-1].get("receipt_id") if receipts else None
     else:
-        consumed_receipt=make_receipt("CONSUMED",base,prev,disposition=disposition)
+        consumed_receipt=make_receipt("CONSUMED",base,prev,hb_epoch=hb_epoch,disposition=disposition)
         receipts.append(consumed_receipt); prev=consumed_receipt["receipt_id"]; append_live_receipt(live_path,consumed_receipt)
-        result_receipt=make_receipt("RESULT_BOUND",base,prev,disposition=disposition)
+        result_receipt=make_receipt("RESULT_BOUND",base,prev,hb_epoch=hb_epoch,disposition=disposition)
         receipts.append(result_receipt); prev=result_receipt["receipt_id"]; append_live_receipt(live_path,result_receipt)
-        egress_receipt=make_receipt("EGRESS_EMITTED",base,prev,disposition=disposition)
+        egress_receipt=make_receipt("EGRESS_EMITTED",base,prev,hb_epoch=hb_epoch,disposition=disposition)
         receipts.append(egress_receipt); prev=egress_receipt["receipt_id"]; append_live_receipt(live_path,egress_receipt)
     if svc.get("service_id")=="stegverse-002.self-characterization" and application_result.get("state_root"):
         state_root=Path(application_result["state_root"]).expanduser().resolve()

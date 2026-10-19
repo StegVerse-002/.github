@@ -32,7 +32,7 @@ class HierarchicalLedgerTests(unittest.TestCase):
             prev=None
             base={"packet_id":"pkt","service_id":"stegverse-002.self-characterization","payload_hash":"b"*64}
             for kind in M.KINDS:
-                row=M.make_receipt(kind,base,prev,disposition="COMPLETED" if kind in {"CONSUMED","RESULT_BOUND","EGRESS_EMITTED"} else None)
+                row=M.make_receipt(kind,base,prev,hb_epoch=4096,disposition="COMPLETED" if kind in {"CONSUMED","RESULT_BOUND","EGRESS_EMITTED"} else None)
                 receipts.append(row); prev=row["receipt_id"]
             bundle={"receipts":receipts}
             root=M.build_org_ledger_root(state_root,bundle)
@@ -40,6 +40,7 @@ class HierarchicalLedgerTests(unittest.TestCase):
             self.assertEqual(root["children"][0]["root_hash"],repo_root["root_hash"])
             self.assertEqual(root["range"]["first_receipt_id"],receipts[0]["receipt_id"])
             self.assertEqual(root["range"]["last_receipt_id"],receipts[-1]["receipt_id"])
+            self.assertEqual(root["generated_at"],"hb-epoch:4096")
             body=dict(root); claimed=body.pop("root_hash")
             self.assertEqual(claimed,M.digest(body))
 

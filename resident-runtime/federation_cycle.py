@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
+"""Run one federation cycle at the supplied epoch and record it.
+
+The epoch is ``--hb-epoch``, else ``STEGVERSE_HB_EPOCH``. An absent or invalid
+one is refused six-field before any frame is consumed and before
+``latest-cycle.json`` is written. The cycle's heartbeat, its response frames
+and its receipts are stamped from that epoch, never from a clock.
+"""
 from __future__ import annotations
-import importlib.util, json, os
+import argparse, importlib.util, json, os, sys
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -9,29 +16,53 @@ K=importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(K)
 GWSPEC=importlib.util.spec_from_file_location("federation_gateway_transport",ROOT/"resident-runtime"/"federation_gateway_transport.py")
 GW=importlib.util.module_from_spec(GWSPEC); GWSPEC.loader.exec_module(GW)
 
-def main():
-    if os.getenv("STEGVERSE_ORG_FEDERATION_GATEWAY_URL","").strip():
-        receipt=GW.resident_gateway_cycle(ROOT)
-        receipt["heartbeat_reference"]=K.hb_reference()
+EPOCH_RETRY_ENTRYPOINT="resident-runtime/federation_cycle.py (--hb-epoch, or "+K.SUPPLIED_EPOCH_ENV+")"
+OUT=ROOT/"resident-runtime"/"federation"/"latest-cycle.json"
+
+def heartbeat(hb_epoch:int)->dict:
+    return {**K.hb_reference(K.epoch_now_ns(hb_epoch)),"derived_from_clock":False,"epoch_source":"SUPPLIED"}
+
+def cycle(hb_epoch:int, *, gateway:bool)->dict:
+    if gateway:
+        receipt=GW.resident_gateway_cycle(ROOT,hb_epoch=hb_epoch)
+        receipt["heartbeat_reference"]=heartbeat(hb_epoch)
         receipt["transport"]="SHARED_SERVICE_GATEWAY"
-    else:
-        results=K.consume_and_respond(ROOT)
-        consumed=sum(1 for x in results if (x.get("result") or {}).get("status")=="CONSUMED")
-        responses=sum(1 for x in results if x.get("response_publication"))
-        receipt={
-          "schema_version":"stegverse.org-federation-cycle.v1",
-          "organization":K.load_registry(ROOT)["organization"],
-          "heartbeat_reference":K.hb_reference(),
-          "frames_seen":len(results),
-          "frames_consumed":consumed,
-          "responses_emitted":responses,
-          "authority_effect":"NONE_CARRIER_ONLY",
-          "transport":"LOCAL_SPOOL_FALLBACK"
-        }
-    out=ROOT/"resident-runtime"/"federation"/"latest-cycle.json"
-    out.parent.mkdir(parents=True,exist_ok=True)
-    out.write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
+        return receipt
+    results=K.consume_and_respond(ROOT,hb_epoch=hb_epoch)
+    consumed=sum(1 for x in results if (x.get("result") or {}).get("status")=="CONSUMED")
+    responses=sum(1 for x in results if x.get("response_publication"))
+    return {
+      "schema_version":"stegverse.org-federation-cycle.v1",
+      "organization":K.load_registry(ROOT)["organization"],
+      "heartbeat_reference":heartbeat(hb_epoch),
+      "frames_seen":len(results),
+      "frames_consumed":consumed,
+      "responses_emitted":responses,
+      "authority_effect":"NONE_CARRIER_ONLY",
+      "transport":"LOCAL_SPOOL_FALLBACK"
+    }
+
+def main(argv=None)->int:
+    ap=argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    # The raw text goes to the shared epoch rule: argparse's int() would take
+    # "+33", " 33" or fullwidth digits as 33.
+    ap.add_argument("--hb-epoch",default=None)
+    ap.add_argument("--out",type=Path,default=OUT)
+    a=ap.parse_args(argv)
+    gateway=bool(os.getenv("STEGVERSE_ORG_FEDERATION_GATEWAY_URL","").strip())
+    try:
+        hb_epoch=K.supplied_epoch(K.caller_epoch(a.hb_epoch),retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
+        receipt=cycle(hb_epoch,gateway=gateway)
+    except ValueError as exc:
+        # Each loaded kernel has its own SuppliedEpochRefused class.
+        if not isinstance(getattr(exc,"refusal",None),dict):
+            raise
+        print(json.dumps(exc.refusal,sort_keys=True))
+        return 1
+    a.out.parent.mkdir(parents=True,exist_ok=True)
+    a.out.write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n")
     print(json.dumps(receipt,sort_keys=True))
+    return 0
 
 if __name__=="__main__":
-    main()
+    sys.exit(main())

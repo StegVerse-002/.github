@@ -345,7 +345,7 @@ class AddressedAndClosedTests(RedirectedLedgers):
 
     def test_a_peer_frame_at_the_address_is_received_and_receipted(self):
         self.publish(diagnostic("addressed-diagnostic"), ADDRESS, "addressed-diagnostic")
-        # The kernel's dispatch carries no epoch; the caller supplies it.
+        # The caller supplies the epoch; the frame's own heartbeat is not it.
         with mock.patch.dict(os.environ, {"STEGVERSE_HB_EPOCH": "32"}):
             results = self.consume()
         self.assertEqual(len(results), 1)
@@ -374,7 +374,8 @@ class AddressedAndClosedTests(RedirectedLedgers):
 
     def test_a_manifest_addressed_to_this_capability_is_not_a_diagnostic(self):
         self.publish({"manifest": {"probe": True}}, ADDRESS, "not-a-diagnostic")
-        with self.assertRaises(ValueError) as refused:
+        with mock.patch.dict(os.environ, {"STEGVERSE_HB_EPOCH": "32"}), \
+                self.assertRaises(ValueError) as refused:
             self.consume()
         self.assertIn("SUBMISSION_DECLARES_A_RESPONDED_REQUEST_CLASS", str(refused.exception))
         self.assertEqual(self.receipts(
