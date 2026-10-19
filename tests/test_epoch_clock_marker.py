@@ -204,6 +204,17 @@ class ConsumingRoutes(unittest.TestCase):
             self.assertNotIn("sampled_unix_ns", reference)
         return frame
 
+    def unmarked_frame(self, service, payload, packet_id):
+        """A frame whose heartbeat has neither a flag nor a sample: UNMARKED."""
+        packet = self.K.build_packet(origin_org=PEER, origin_service="stegverse-org.org-control",
+                                     destination_org=THIS, destination_service=service, payload=payload,
+                                     packet_id=packet_id)
+        frame = self.K.carrier_frame(packet, now_ns=self.K.epoch_now_ns(SUPPLIED))
+        body = {key: value for key, value in frame.items() if key != "frame_sha256"}
+        body["heartbeat_reference"] = {key: value for key, value in body["heartbeat_reference"].items()
+                                       if key != "derived_from_clock"}
+        return {**body, "frame_sha256": self.K.sha(body)}
+
     def frames(self):
         directory = self.mesh / "frames.d"
         return [json.loads(path.read_text()) for path in sorted(directory.glob("*.json"))] if directory.is_dir() else []
@@ -259,7 +270,7 @@ class ConsumingRoutes(unittest.TestCase):
 class ConsumeAndRespond(ConsumingRoutes):
     """Row 1: the response frame takes the supplied epoch, never ``publish_packet(None)``."""
 
-    def test_a_clock_frame_needing_an_epoch_is_quarantined_even_with_a_caller_epoch(self):
+    def test_a_clock_frame_needing_an_epoch_is_quarantined_without_a_caller_epoch(self):
         self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("absent-consume"), "absent-consume")
         reads = self.clock_reads()
         for caller in (None, str(SUPPLIED)):
@@ -290,18 +301,25 @@ class ConsumeAndRespond(ConsumingRoutes):
         self.assertNotIn("sampled_unix_ns", reference)
         self.assertNoUnmarkedClock()
 
-    def test_a_clock_frame_at_a_role_stamping_no_time_is_consumed_without_a_response(self):
-        self.publish_inbound(THIS.lower() + ".org-control",
-                             {"message_class": "ecosystem.communication", "communication_id": "clock-control",
-                              "subject": "s", "body": {}}, "clock-control")
+    def test_a_clock_frame_lends_no_epoch_so_its_response_needs_the_callers(self):
+        payload = {"message_class": "ecosystem.communication", "subject": "s", "body": {}}
+        self.publish_inbound(THIS.lower() + ".org-control", {**payload, "communication_id": "clock-a"}, "clock-a")
         reads = self.clock_reads()
-        result, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
-        self.assertEqual(self.clock_reads(), reads)
+        # No caller epoch: consumed, and its response is not published.
+        result, = self.K.consume_and_respond(self.root, mesh_root=self.mesh)
         self.assertEqual(result["result"]["status"], "CONSUMED")
         self.assertIsNone(result["response_publication"])
         self.assertEqual(result["response_refused"], "HB_EPOCH_NOT_SUPPLIED")
         self.assertEqual([frame["destination_org"] for frame in self.frames()], [THIS])
-        self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
+        self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh), [])
+        # With the cycle's epoch: answered at that epoch, never at the clock's.
+        self.assertEqual(self.clock_reads(), reads)
+        self.publish_inbound(THIS.lower() + ".org-control", {**payload, "communication_id": "clock-b"}, "clock-b")
+        reads = self.clock_reads()
+        result, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        reference = result["response_publication"]["frame"]["heartbeat_reference"]
+        self.assertEqual((reference["epoch"], reference["derived_from_clock"]), (SUPPLIED, False))
+        self.assertEqual(self.clock_reads(), reads)
         self.assertNoUnmarkedClock()
 
     def test_the_response_frame_and_receipts_carry_the_supplied_epoch(self):
@@ -392,8 +410,8 @@ class FederationCycle(ConsumingRoutes):
 
     def test_the_gateway_acknowledges_a_refused_frame_blocked_so_it_is_not_redelivered(self):
         gateway = _load("marker_gateway_refused", self.root, "resident-runtime/federation_gateway_transport.py")
-        clock_frame = self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("gateway-clock"),
-                                           "gateway-clock")
+        clock_frame = self.unmarked_frame(THIS.lower() + ".intr-destination", diagnostic("gateway-unmarked"),
+                                          "gateway-unmarked")
         submitted, acknowledged = [], []
         with mock.patch.object(gateway, "fetch_frame",
                                return_value={"state": "FRAME_AVAILABLE", "frame": clock_frame}), \
@@ -407,7 +425,7 @@ class FederationCycle(ConsumingRoutes):
         self.assertEqual(self.clock_reads(), reads)
         self.assertEqual(result["state"], "REFUSED_QUARANTINED")
         self.assertEqual(result["failure_code"], "FRAME_REFUSED_QUARANTINED")
-        self.assertEqual(result["refusal"]["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+        self.assertEqual(result["refusal"]["failure_code"], "HB_EPOCH_PROVENANCE_UNMARKED")
         self.assertEqual(submitted, [])
         self.assertEqual([(value["state"], value["observed_at"]) for value in acknowledged],
                          [("BLOCKED", f"hb-epoch:{SUPPLIED}")])
@@ -433,27 +451,32 @@ class RefusedFramesAreTerminal(ConsumingRoutes):
         directory = self.root / "resident-runtime/federation/seen.d"
         return [json.loads(path.read_text()) for path in sorted(directory.glob("*.json"))] if directory.is_dir() else []
 
-    def test_a_mixed_batch_consumes_the_valid_frame_and_quarantines_the_clock_frame_once(self):
+    def test_a_mixed_batch_consumes_the_valid_frame_and_quarantines_the_refused_frame_once(self):
         self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("mixed-valid"), "mixed-valid",
                              epoch=SUPPLIED)
-        self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("mixed-clock"), "mixed-clock")
+        self.K.publish_frame(self.unmarked_frame(THIS.lower() + ".intr-destination", diagnostic("mixed-unmarked"),
+                                                 "mixed-unmarked"), root=self.mesh)
         reads = self.clock_reads()
         first = self.run_cycle()
         self.assertEqual((first["frames_seen"], first["frames_consumed"], first["frames_refused_quarantined"]),
                          (2, 1, 1))
         markers = self.seen_markers()
         quarantined = [marker for marker in markers if marker["status"] == "REFUSED"]
-        self.assertEqual([marker["packet_id"] for marker in quarantined], ["mixed-clock"])
+        self.assertEqual([marker["packet_id"] for marker in quarantined], ["mixed-unmarked"])
         marker = quarantined[0]
         self.assertRefusal(marker, "FRAME_REFUSED_QUARANTINED")
-        self.assertEqual(marker["refused_failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+        self.assertEqual(marker["refused_failure_code"], "HB_EPOCH_PROVENANCE_UNMARKED")
         receipts = len(self.receipts())
-        # The second cycle proceeds: the quarantined frame is not retried, nothing new is written.
+        # The second cycle proceeds: the quarantined frame is not retried. A CLOCK
+        # frame is consumed at the cycle's epoch (NARROW S1), never at the clock's.
         self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("later-valid"), "later-valid",
                              epoch=SUPPLIED)
+        self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("later-clock"), "later-clock")
+        self.assertEqual(self.clock_reads(), reads + 1)  # the fabricated CLOCK frame's own sample
+        reads = self.clock_reads()
         second = self.run_cycle()
         self.assertEqual((second["frames_seen"], second["frames_consumed"], second["frames_refused_quarantined"]),
-                         (1, 1, 0))
+                         (2, 2, 0))
         self.assertEqual(len([m for m in self.seen_markers() if m["status"] == "REFUSED"]), 1)
         self.assertGreater(len(self.receipts()), receipts)
         self.assertEqual(self.clock_reads(), reads)
@@ -566,7 +589,7 @@ class SelfCharacterizationReceipts(ConsumingRoutes):
         frame = self.publish_inbound(THIS.lower() + ".self-characterization", {"probe": "self"}, "self-absent")
         reads = self.clock_reads()
         with self.assertRaises(self.K.SuppliedEpochRefused) as refused:
-            self.K.ingest_frame(self.root, frame, mesh_root=self.mesh, hb_epoch=str(SUPPLIED))
+            self.K.ingest_frame(self.root, frame, mesh_root=self.mesh)
         self.assertRefusal(refused.exception.refusal, "HB_EPOCH_NOT_SUPPLIED")
         self.assertFalse(self.self_char.exists())
         self.assertEqual(self.clock_reads(), reads)
@@ -589,17 +612,6 @@ class SelfCharacterizationReceipts(ConsumingRoutes):
 
 class IngestByRole(ConsumingRoutes):
     """Row 4: a role that stamps time refuses an absent epoch; one that does not reads no clock."""
-
-    def unmarked_frame(self, service, payload, packet_id):
-        """A frame whose heartbeat has neither a flag nor a sample: UNMARKED."""
-        packet = self.K.build_packet(origin_org=PEER, origin_service="stegverse-org.org-control",
-                                     destination_org=THIS, destination_service=service, payload=payload,
-                                     packet_id=packet_id)
-        frame = self.K.carrier_frame(packet, now_ns=self.K.epoch_now_ns(SUPPLIED))
-        body = {key: value for key, value in frame.items() if key != "frame_sha256"}
-        body["heartbeat_reference"] = {key: value for key, value in body["heartbeat_reference"].items()
-                                       if key != "derived_from_clock"}
-        return {**body, "frame_sha256": self.K.sha(body)}
 
     def test_a_clock_frame_is_consumed_at_roles_stamping_no_time_and_lends_no_epoch(self):
         # NARROW S1: CLOCK frames from the WU-B13-scoped publishers are consumed, lending no epoch.
@@ -650,7 +662,7 @@ class IngestByRole(ConsumingRoutes):
         self.assertNoLedger()
         self.assertFalse((self.root / "resident-runtime/control").exists())
 
-    def test_roles_that_stamp_time_refuse_a_clock_frame_and_take_a_supplied_one(self):
+    def test_roles_that_stamp_time_refuse_a_clock_frame_with_no_caller_epoch_and_take_a_supplied_one(self):
         for service, payload in (
                 (THIS.lower() + ".org-control", {"message_class": "ecosystem.monitor.request",
                                                  "communication_id": "role-monitor", "subject": "s", "body": {}}),
@@ -660,7 +672,7 @@ class IngestByRole(ConsumingRoutes):
                 frame = self.publish_inbound(service, payload, "stamped-" + service)
                 reads = self.clock_reads()
                 with self.assertRaises(ValueError) as refused:
-                    self.K.ingest_frame(self.root, frame, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+                    self.K.ingest_frame(self.root, frame, mesh_root=self.mesh)
                 self.assertRefusal(refused.exception.refusal, "HB_EPOCH_NOT_SUPPLIED")
                 frame = self.publish_inbound(service, payload, "supplied-" + service, epoch=SUPPLIED)
                 result = self.K.ingest_frame(self.root, frame, mesh_root=self.mesh)
@@ -675,6 +687,80 @@ class IngestByRole(ConsumingRoutes):
                     self.assertEqual({row["observed_at"] for row in execution["receipts"]},
                                      {f"hb-epoch:{SUPPLIED}"})
         self.assertAllSupplied()
+
+
+class ExplicitEpochAgainstTheFrame(ConsumingRoutes):
+    """B-P36l: an explicit epoch is judged on its own, and never silently loses to the frame's."""
+
+    def test_an_invalid_explicit_epoch_is_refused_whatever_the_frame_carries(self):
+        frame = self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("explicit-invalid"),
+                                     "explicit-invalid", epoch=SUPPLIED)
+        for explicit in ("abc", "+33", 31, True, ""):
+            with self.subTest(explicit=explicit):
+                with self.assertRaises(self.K.SuppliedEpochRefused) as refused:
+                    self.K.ingest_frame(self.root, frame, mesh_root=self.mesh, hb_epoch=explicit)
+                self.assertRefusal(refused.exception.refusal, "HB_EPOCH_INVALID")
+        self.assertNoLedger()
+
+    def test_an_explicit_epoch_that_differs_from_the_frames_is_a_conflict_and_nothing_is_written(self):
+        frame = self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("explicit-conflict"),
+                                     "explicit-conflict", epoch=39)
+        reads = self.clock_reads()
+        for explicit in (SUPPLIED, str(SUPPLIED)):
+            with self.subTest(explicit=explicit):
+                with self.assertRaises(self.K.SuppliedEpochRefused) as refused:
+                    self.K.ingest_frame(self.root, frame, mesh_root=self.mesh, hb_epoch=explicit)
+                self.assertRefusal(refused.exception.refusal, "HB_EPOCH_CONFLICT")
+        self.assertNoLedger()
+        self.assertEqual(self.clock_reads(), reads)
+
+    def test_exactly_one_epoch_present_is_the_supplied_one(self):
+        agreeing = self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("explicit-agree"),
+                                        "explicit-agree", epoch=SUPPLIED)
+        self.assertEqual(self.K.consuming_epoch(agreeing, SUPPLIED), SUPPLIED)
+        self.assertEqual(self.K.consuming_epoch(agreeing), SUPPLIED)
+        clock = self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("explicit-clock"),
+                                     "explicit-clock")
+        self.assertEqual(self.K.consuming_epoch(clock, SUPPLIED), SUPPLIED)
+        self.assertIsNone(self.K.consuming_epoch(clock))
+        result = self.K.ingest_frame(self.root, clock, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertEqual(result["status"], "CONSUMED")
+        self.assertAllSupplied()
+        # A cycle's epoch is a fallback, not an explicit one: it never conflicts with a frame's.
+        self.assertEqual(self.K.consuming_epoch(agreeing, 39, explicit=False), SUPPLIED)
+
+
+class SeededLegacySource(ConsumingRoutes):
+    """O-1 ordering: a frame never leaves when its receipt pair would be refused."""
+
+    def setUp(self):
+        super().setUp()
+        self.egress = _load("marker_egress_seeded", self.root, "resident-runtime/organization_egress_boundary.py")
+
+    def seed_legacy(self, transition_id, transition_class):
+        legacy = lambda epoch: {"epoch": epoch, "progression_dependency": "OSCILLATOR_ONLY", "authority_effect": "NONE"}
+        with mock.patch.object(self.egress.repository_ledger, "_heartbeat", legacy):
+            self.egress.repository_ledger.append(transition_id, transition_class, "sha256:" + "a" * 64,
+                                                 "sha256:" + "b" * 64, {"seeded": True}, "NONE", hb_epoch=40)
+
+    def packet_id(self, payload):
+        origin = self.egress.this_organization(self.root)
+        resolved = self.egress.resolve_destination(PEER, capability="intr-destination", root=self.root)
+        return self.K.build_packet(
+            origin_org=origin, origin_service=self.egress.peer_capability_service(origin, "intr-destination"),
+            destination_org=resolved["destination_organization"], destination_service=resolved["destination_service"],
+            payload=dict(payload), transition_reference="ecosystem.transition.interorg.v1",
+            authority_effect="NONE")["packet_id"]
+
+    def test_emit_refuses_before_publishing_when_the_recorded_source_is_legacy(self):
+        payload = diagnostic("seeded-emit")
+        self.seed_legacy(self.egress.EMITTED_CLASS + ":" + self.packet_id(payload), self.egress.EMITTED_CLASS)
+        with self.assertRaises(ValueError) as refused:
+            self.egress.emit(PEER, payload, standing={"mode": "ESTABLISH_GENESIS", "node_ref": "s", "predecessor": None},
+                             capability="intr-destination", root=self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertRefusal(refused.exception.refusal, "SOURCE_RECEIPT_IS_CLOCK_PROVENANCE")
+        self.assertEqual(self.frames(), [])
+        self.assertFalse(self.org_ledger.exists())
 
 
 class HeartbeatMarkers(ConsumingRoutes):

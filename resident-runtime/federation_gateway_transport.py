@@ -218,7 +218,7 @@ def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str
             "gateway_execution_authority": "NONE",
         }
     packet = K.recover_packet(frame)
-    result = K.ingest_frame(repo_root, frame, hb_epoch=hb_epoch)
+    result = K.ingest_frame(repo_root, frame, hb_epoch=frame_epoch)
     response_emitted = 0
     response_ref = None
     if result.get("status") == "CONSUMED":

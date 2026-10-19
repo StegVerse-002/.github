@@ -315,22 +315,38 @@ def persist_outbox(root:Path, frame:dict[str,Any])->Path:
 INGEST_EPOCH_RETRY_ENTRYPOINT=("org-kernel/kernel.py::ingest_frame (a frame whose heartbeat is supplied, "
                                "or hb_epoch=, or "+SUPPLIED_EPOCH_ENV+")")
 
-def consuming_epoch(frame:dict[str,Any], hb_epoch:Any=None)->int|None:
-    """The epoch a frame is consumed at, None for a CLOCK frame, or SuppliedEpochRefused.
+HB_EPOCH_CONFLICT="HB_EPOCH_CONFLICT"
 
-    Nothing is written. Classes (NARROW S1):
+def consuming_epoch(frame:dict[str,Any], hb_epoch:Any=None, *, explicit:bool=True)->int|None:
+    """The epoch a frame is consumed at, None when it has none, or SuppliedEpochRefused.
 
-    - SUPPLIED (the shared rule passes): consumed at the heartbeat's epoch.
+    Nothing is written. ``hb_epoch`` is the caller's epoch: ``explicit`` when a
+    caller passed it for this frame (B-P36l), or a cycle's fallback for frames
+    that lend none. ``STEGVERSE_HB_EPOCH`` is a fallback too. Frame classes
+    (NARROW S1):
+
+    - SUPPLIED (the shared rule passes): consumed at the heartbeat's epoch. An
+      explicit epoch that differs is HB_EPOCH_CONFLICT.
     - CARRIED (a self-asserted ``source``/``head_receipt_sha``): refused
       CARRIED_PROVENANCE_UNVERIFIED, never stripped and taken as supplied.
     - CLOCK (``derived_from_clock`` true, or the legacy sample with no flag,
       from the WU-B13-scoped frame-only publishers): consumed, lending no
-      epoch. A route that needs one refuses HB_EPOCH_NOT_SUPPLIED.
+      epoch. The caller's epoch is used when there is one; otherwise None, and
+      a route that needs an epoch refuses HB_EPOCH_NOT_SUPPLIED.
     - Anything else the rule refuses (UNMARKED, an invalid epoch or reference):
       refused with the rule's code.
 
-    Only a frame with no heartbeat at all takes the caller's epoch.
+    An explicit epoch the rule refuses is refused whatever the frame carries.
+    A frame with no heartbeat at all takes the caller's epoch, or is refused.
     """
+    if explicit and hb_epoch is not None:
+        hb_epoch=supplied_epoch(hb_epoch,retry_entrypoint=INGEST_EPOCH_RETRY_ENTRYPOINT)
+        stated=hb_epoch
+    else:
+        stated=None
+    def caller()->int|None:
+        raw=caller_epoch(hb_epoch)
+        return None if raw is None else supplied_epoch(raw,retry_entrypoint=INGEST_EPOCH_RETRY_ENTRYPOINT)
     reference=frame.get("heartbeat_reference") if isinstance(frame,dict) else None
     if reference is None:
         return supplied_epoch(caller_epoch(hb_epoch),retry_entrypoint=INGEST_EPOCH_RETRY_ENTRYPOINT)
@@ -338,14 +354,20 @@ def consuming_epoch(frame:dict[str,Any], hb_epoch:Any=None)->int|None:
         raise SuppliedEpochRefused(carried_refusal(reference,INGEST_EPOCH_RETRY_ENTRYPOINT))
     failure=supplied_epoch_failure(reference.get("epoch") if isinstance(reference,dict) else None,reference)
     if failure is None:
-        return int(reference["epoch"])
+        carried=int(reference["epoch"])
+        if stated is not None and stated!=carried:
+            raise SuppliedEpochRefused(_epoch_refusal(
+                HB_EPOCH_CONFLICT,"the explicit hb_epoch "+str(stated)+" differs from the frame's supplied epoch "
+                +str(carried),INGEST_EPOCH_RETRY_ENTRYPOINT,
+                repair="supply no epoch, or the frame's own; two supplied epochs that differ are never reconciled"))
+        return carried
     if _clock_flagged(reference):
-        return None
+        return caller()
     raise SuppliedEpochRefused(_epoch_refusal(failure[0],failure[1],INGEST_EPOCH_RETRY_ENTRYPOINT))
 
 def _clock_frame_refusal()->dict[str,Any]:
     return _epoch_refusal(HB_EPOCH_NOT_SUPPLIED,
-                          "the frame's heartbeat is CLOCK and lends no epoch; this route needs one and no clock is read",
+                          "the frame's heartbeat is CLOCK and lends no epoch, and no caller epoch was supplied; this route needs one and no clock is read",
                           INGEST_EPOCH_RETRY_ENTRYPOINT,
                           repair="the sender re-emits the crossing as a frame whose heartbeat is supplied")
 
@@ -364,14 +386,15 @@ FRAME_REFUSED_QUARANTINED="FRAME_REFUSED_QUARANTINED"
 
 def admit_frame(frame:dict[str,Any], hb_epoch:Any=None, *,
                 root:Path|None=None)->tuple[int|None,dict[str,Any]|None]:
-    """A frame's consuming epoch (None for a CLOCK frame), or the refusal that makes it terminal.
+    """A frame's consuming epoch (None when it has none), or the refusal that makes it terminal.
 
-    With ``root``, a CLOCK frame addressed to a route that stamps time is
-    refused HB_EPOCH_NOT_SUPPLIED here. Nothing is written.
+    ``hb_epoch`` is a cycle's fallback, not an explicit epoch for each frame.
+    With ``root``, a frame with no epoch addressed to a route that stamps time
+    is refused HB_EPOCH_NOT_SUPPLIED here. Nothing is written.
     """
     try:
         packet=recover_packet(frame)
-        epoch=consuming_epoch(frame,hb_epoch)
+        epoch=consuming_epoch(frame,hb_epoch,explicit=False)
         if epoch is None and root is not None:
             service=_service(root,packet)
             if service is not None and stamps_time(service,packet):
@@ -386,14 +409,18 @@ def admit_frame(frame:dict[str,Any], hb_epoch:Any=None, *,
 
 def ingest_frame(root:Path, frame:dict[str,Any], *, mesh_root:Path|None=None,
                  hb_epoch:Any=None)->dict[str,Any]:
-    """Consume one frame at its supplied epoch, or refuse a frame that has none."""
+    """Consume one frame at its supplied epoch (see ``consuming_epoch``), or refuse it.
+
+    ``hb_epoch`` is explicit: an invalid one is refused, and one that differs
+    from the frame's supplied epoch is HB_EPOCH_CONFLICT.
+    """
     packet=recover_packet(frame)
     registry=load_registry(root)
     if frame["destination_org"]!=registry["organization"]:
         return {"status":"IGNORED_NOT_ADDRESSED","packet_id":frame["packet_id"]}
     hb_epoch=consuming_epoch(frame,hb_epoch)
     if hb_epoch is None:
-        # A CLOCK frame lends no epoch, and the caller's never stands in for it.
+        # A CLOCK frame lends no epoch, and the caller supplied none.
         service=_service(root,packet)
         if service is not None and stamps_time(service,packet):
             raise SuppliedEpochRefused(_clock_frame_refusal())
@@ -401,7 +428,7 @@ def ingest_frame(root:Path, frame:dict[str,Any], *, mesh_root:Path|None=None,
     return {"status":"CONSUMED","packet":packet,"execution_result":result}
 
 __all__=["hb_reference","HB_EPOCH_NOT_SUPPLIED","HB_EPOCH_INVALID","SuppliedEpochRefused","writer_epoch_refusal","supplied_epoch",
-         "HB_EPOCH_PROVENANCE_UNMARKED","CARRIED_PROVENANCE_UNVERIFIED",
+         "HB_EPOCH_PROVENANCE_UNMARKED","CARRIED_PROVENANCE_UNVERIFIED","HB_EPOCH_CONFLICT",
          "SHARED_VALIDATOR_SHA256","supplied_epoch_failure","stamps_time",
          "SUPPLIED_EPOCH_ENV","caller_epoch","epoch_now_ns","frame_epoch","consuming_epoch","carried_refusal",
          "FRAME_REFUSED_QUARANTINED","admit_frame","derive_channel","carrier_frame","recover_packet","dispatch","persist_outbox","ingest_frame",

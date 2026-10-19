@@ -360,6 +360,24 @@ def _record(transition_id: str, transition_class: str, predecessor: str, success
             "organization_receipt": organization_receipt}
 
 
+class _PublishRefused(Exception):
+    """Carries a refusal past the emission's ValueError handler, so it is not recorded as one."""
+
+    def __init__(self, refusal: Mapping[str, Any]):
+        super().__init__(refusal.get("failure_code"))
+        self.refusal = dict(refusal)
+
+
+def _recorded_source_refusal(transition_id: str, transition_class: str) -> dict[str, Any] | None:
+    """The refusal the organization writer would give this transition's recorded repository receipt.
+
+    Checked before a frame is published, so a frame never leaves when its
+    receipt pair cannot be completed (SOURCE_RECEIPT_IS_CLOCK_PROVENANCE).
+    """
+    prior = repository_ledger.recorded(transition_id, transition_class)
+    return None if prior is None else organization_ledger.source_provenance_refusal(prior)
+
+
 def _publish_epoch(hb_epoch: int | None) -> int | None:
     """Map a supplied epoch onto the kernel's heartbeat anchor, or leave time unset."""
     if hb_epoch is None:
@@ -423,7 +441,12 @@ def emit(destination_organization: Any, payload: Mapping[str, Any], *,
             destination_service=resolved["destination_service"],
             payload=dict(payload),
             transition_reference=transition_reference, authority_effect="NONE")
+        refusal = _recorded_source_refusal(EMITTED_CLASS + ":" + packet["packet_id"], EMITTED_CLASS)
+        if refusal is not None:
+            raise _PublishRefused(refusal)
         published = kernel.publish_packet(packet, root=mesh_root, now_ns=_publish_epoch(hb_epoch))
+    except _PublishRefused as held:
+        raise organization_ledger.OrgLedgerEpochRefused(held.refusal) from None
     except EgressRefused as exc:
         record = emit_refusal_record(exc.failed_predicate, exc.reason,
                                      destination_organization, origin, payload)

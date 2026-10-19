@@ -335,21 +335,27 @@ class AddressedAndClosedTests(RedirectedLedgers):
     def test_a_peer_frame_without_a_supplied_epoch_is_refused_before_any_receipt(self):
         # Stamped at the clock: the frame carries no supplied epoch either.
         self.publish(diagnostic("unepoched-diagnostic"), ADDRESS, "unepoched-diagnostic", now_ns=None)
-        # Refused whether or not the caller supplies an epoch: the frame's own
-        # heartbeat is CLOCK and lends none, and this route needs one. The
-        # refusal is reported, not consumed.
+        # The frame's heartbeat is CLOCK and lends no epoch. With none from the
+        # caller this route refuses, reported rather than raised; with the
+        # caller's, it is consumed at that epoch.
         for supplied in (None, "32"):
             with mock.patch.dict(os.environ):
                 os.environ.pop("STEGVERSE_HB_EPOCH", None)
                 if supplied is not None:
                     os.environ["STEGVERSE_HB_EPOCH"] = supplied
                 result, = self.consume()
-            self.assertEqual(result["result"]["status"], "REFUSED")
-            refusal = result["result"]["refusal"]
-            self.assertEqual(refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
-            self.assertIs(refusal["derived_from_clock"], False)
-        self.assertFalse(Path(os.environ["STEGVERSE_REPO_LEDGER_ROOT"]).exists())
-        self.assertFalse(Path(os.environ["STEGVERSE_ORG_LEDGER_ROOT"]).exists())
+            if supplied is None:
+                self.assertEqual(result["result"]["status"], "REFUSED")
+                refusal = result["result"]["refusal"]
+                self.assertEqual(refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+                self.assertIs(refusal["derived_from_clock"], False)
+                self.assertFalse(Path(os.environ["STEGVERSE_REPO_LEDGER_ROOT"]).exists())
+                self.assertFalse(Path(os.environ["STEGVERSE_ORG_LEDGER_ROOT"]).exists())
+            else:
+                # NARROW S1: a CLOCK frame lends no epoch; the caller's supplied one is used.
+                self.assertEqual(result["result"]["status"], "CONSUMED")
+                for receipt in self.receipts("STEGVERSE_REPO_LEDGER_ROOT", "stegverse.repo-transition-receipt/v1"):
+                    self.assertEqual(receipt["hb_reference"]["epoch"], 32)
 
     def test_a_peer_frame_at_the_address_is_received_and_receipted(self):
         self.publish(diagnostic("addressed-diagnostic"), ADDRESS, "addressed-diagnostic")
