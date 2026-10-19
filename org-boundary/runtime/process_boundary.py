@@ -31,12 +31,76 @@ def make_receipt(kind, base, previous_receipt_id, *, hb_epoch=None, disposition=
         row["application_disposition"]=disposition
     return row
 
+#: The exit status of a fault writing this boundary's own state (B-P36q). The
+#: caller retries, and the interrupted history resumes; nothing is refused for good.
+EX_WRITE_FAULT=75
+
 def append_live_receipt(path, receipt):
     if path is None:
         return
     path.parent.mkdir(parents=True,exist_ok=True)
     with path.open("a",encoding="utf-8") as handle:
         handle.write(json.dumps(receipt,sort_keys=True,separators=(",",":"))+"\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+
+def write_json_atomic(path, value):
+    """Publish a JSON document by same-directory replacement, so a fault leaves the old state or the new."""
+    path=Path(path)
+    fd,temp=tempfile.mkstemp(prefix=".boundary-",suffix=".tmp",dir=str(path.parent))
+    try:
+        with os.fdopen(fd,"w",encoding="utf-8") as handle:
+            handle.write(json.dumps(value,indent=2,sort_keys=True)+"\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp,path)
+    finally:
+        if os.path.exists(temp):
+            os.unlink(temp)
+
+def expected_receipt_id(kind, base, previous_receipt_id):
+    return hid(kind.lower(),{**base,"kind":kind,"previous_receipt_id":previous_receipt_id})
+
+def resume_live_history(live_path, base):
+    """The live rows already recorded for this packet, as the prefix an interrupted run left (B-P36q).
+
+    A receipt's id is a function of the packet, its kind and its predecessor,
+    so each recorded row is checked against the one this run would write. The
+    longest matching prefix is kept, byte for byte, and anything after it (a
+    torn last line) is dropped by rewriting the log atomically. A first row
+    that is another packet's ingress is that packet's history: a collision.
+    """
+    if not live_path.exists():
+        return []
+    rows=[]; previous=None
+    lines=live_path.read_text(encoding="utf-8").split("\n")
+    complete=lines[:-1]  # the text after the last newline is a torn write, if any
+    for index,line in enumerate(complete):
+        try:
+            row=json.loads(line)
+        except ValueError:
+            break
+        kind=KINDS[len(rows)] if len(rows)<len(KINDS) else None
+        if (not isinstance(row,dict) or kind is None or row.get("kind")!=kind
+                or row.get("previous_receipt_id")!=previous
+                or row.get("receipt_id")!=expected_receipt_id(kind,base,previous)):
+            if index==0 and isinstance(row,dict) and row.get("kind")==KINDS[0]:
+                raise SystemExit("org-boundary-receipt-write-once-collision")
+            break
+        rows.append(row); previous=row["receipt_id"]
+    kept="".join(json.dumps(row,sort_keys=True,separators=(",",":"))+"\n" for row in rows)
+    if kept!=live_path.read_text(encoding="utf-8"):
+        fd,temp=tempfile.mkstemp(prefix=".boundary-",suffix=".tmp",dir=str(live_path.parent))
+        try:
+            with os.fdopen(fd,"w",encoding="utf-8") as handle:
+                handle.write(kept)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp,live_path)
+        finally:
+            if os.path.exists(temp):
+                os.unlink(temp)
+    return rows
 
 def digest(v): return hashlib.sha256(canon(v)).hexdigest()
 
@@ -126,6 +190,15 @@ def endpoint_result(env,svc,envelope_path):
     raise SystemExit("endpoint-adapter-not-installed")
 
 def main():
+    try:
+        run()
+    except OSError as error:
+        # A fault writing this boundary's own state: six-field, non-terminal. The
+        # caller retries and the interrupted history resumes (B-P36q).
+        print(json.dumps(kernel.own_state_write_refusal(error,EPOCH_RETRY_ENTRYPOINT),sort_keys=True))
+        sys.exit(EX_WRITE_FAULT)
+
+def run():
     ap=argparse.ArgumentParser()
     ap.add_argument("--envelope",required=True)
     ap.add_argument("--registry",default="org-boundary/registry/services.json")
@@ -149,24 +222,32 @@ def main():
     base={"packet_id":env["packet_id"],"service_id":svc["service_id"],"payload_hash":hashlib.sha256(canon(env["payload"])).hexdigest()}
     live_path=None
     prior_boundary_bundle=None
+    resumed=[]
     if svc.get("service_id")=="stegverse-002.self-characterization":
         state_root=Path(os.environ.get("STEGVERSE_SELF_CHAR_STATE_ROOT",str(Path.home()/".stegverse/self-characterization-001"))).expanduser().resolve()
         state_root.mkdir(parents=True,exist_ok=True)
         live_path=state_root/"ORG_BOUNDARY_RECEIPTS.live.jsonl"
         prior_bundle_path=state_root/"ORG_BOUNDARY_RECEIPTS.json"
-        if live_path.exists():
-            if not prior_bundle_path.is_file():
-                raise SystemExit("org-boundary-partial-live-history-without-terminal-bundle")
+        if prior_bundle_path.is_file():
             prior_boundary_bundle=load(prior_bundle_path)
             if prior_boundary_bundle.get("packet_id")!=env["packet_id"] or prior_boundary_bundle.get("payload_sha256")!=base["payload_hash"]:
                 raise SystemExit("org-boundary-receipt-write-once-collision")
+        else:
+            # An interrupted run resumes from the rows it recorded (B-P36q).
+            resumed=resume_live_history(live_path,base)
 
     receipts=[]; prev=None
+    def extend(kind, disposition=None):
+        nonlocal prev
+        if len(receipts)<len(resumed):
+            row=resumed[len(receipts)]
+        else:
+            row=make_receipt(kind,base,prev,hb_epoch=hb_epoch,disposition=disposition)
+            append_live_receipt(live_path,row)
+        receipts.append(row); prev=row["receipt_id"]
     if prior_boundary_bundle is None:
-        ingress_receipt=make_receipt("INGRESS_ACCEPTED",base,prev,hb_epoch=hb_epoch)
-        receipts.append(ingress_receipt); prev=ingress_receipt["receipt_id"]; append_live_receipt(live_path,ingress_receipt)
-        dispatched_receipt=make_receipt("DISPATCHED",base,prev,hb_epoch=hb_epoch)
-        receipts.append(dispatched_receipt); prev=dispatched_receipt["receipt_id"]; append_live_receipt(live_path,dispatched_receipt)
+        extend("INGRESS_ACCEPTED")
+        extend("DISPATCHED")
 
     application_result=endpoint_result(env,svc,a.envelope)
     disposition=str(application_result.get("state") or "UNKNOWN")
@@ -174,12 +255,9 @@ def main():
         receipts=list(prior_boundary_bundle.get("receipts") or [])
         prev=receipts[-1].get("receipt_id") if receipts else None
     else:
-        consumed_receipt=make_receipt("CONSUMED",base,prev,hb_epoch=hb_epoch,disposition=disposition)
-        receipts.append(consumed_receipt); prev=consumed_receipt["receipt_id"]; append_live_receipt(live_path,consumed_receipt)
-        result_receipt=make_receipt("RESULT_BOUND",base,prev,hb_epoch=hb_epoch,disposition=disposition)
-        receipts.append(result_receipt); prev=result_receipt["receipt_id"]; append_live_receipt(live_path,result_receipt)
-        egress_receipt=make_receipt("EGRESS_EMITTED",base,prev,hb_epoch=hb_epoch,disposition=disposition)
-        receipts.append(egress_receipt); prev=egress_receipt["receipt_id"]; append_live_receipt(live_path,egress_receipt)
+        extend("CONSUMED",disposition)
+        extend("RESULT_BOUND",disposition)
+        extend("EGRESS_EMITTED",disposition)
     if svc.get("service_id")=="stegverse-002.self-characterization" and application_result.get("state_root"):
         state_root=Path(application_result["state_root"]).expanduser().resolve()
         if state_root.is_dir():
@@ -203,7 +281,7 @@ def main():
                 if target.exists():
                     if load(target)!=boundary_bundle: raise SystemExit("org-boundary-receipt-write-once-collision")
                 else:
-                    target.write_text(json.dumps(boundary_bundle,indent=2,sort_keys=True)+"\n")
+                    write_json_atomic(target,boundary_bundle)
             else:
                 boundary_bundle=prior_boundary_bundle
                 if not target.is_file() or load(target)!=boundary_bundle:
@@ -215,7 +293,7 @@ def main():
                 organization_ledger_root=load(org_root_path)
             else:
                 organization_ledger_root=build_org_ledger_root(state_root,boundary_bundle)
-                org_root_path.write_text(json.dumps(organization_ledger_root,indent=2,sort_keys=True)+"\n")
+                write_json_atomic(org_root_path,organization_ledger_root)
             application_result["organization_ledger_root_path"]=str(org_root_path)
             application_result["organization_ledger_root_hash"]=organization_ledger_root["root_hash"]
             if application_result.get("state")=="COMPLETED":

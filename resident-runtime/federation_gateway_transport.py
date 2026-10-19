@@ -166,11 +166,11 @@ def _persist_response(repo_root: Path, packet: dict[str, Any], execution_result:
         "authority_effect": execution_result.get("authority_effect"),
     }
     path = out / name
-    if path.exists():
-        if json.loads(path.read_text()) != record:
-            raise FederationGatewayTransportError("response observation write-once collision")
-    else:
-        path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+    existing = K._existing_json(path)
+    if existing is not None and existing != record:
+        raise FederationGatewayTransportError("response observation write-once collision")
+    if existing is None:
+        K._write_json_atomic(path, record)
     return path
 
 
@@ -246,12 +246,27 @@ def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str
     try:
         return _answer(repo_root, registry, organization, frame, packet, frame_epoch, result, hb_epoch)
     except (Exception, SystemExit) as error:
-        if not (K.own_state_fault(error) or isinstance(error, FederationGatewayTransportError)):
-            raise
-        # The crossing is recorded (a replay returns the same receipts); its answer
-        # or acknowledgement is not, so the frame is left for redelivery.
-        return _left_pending(organization, frame,
-                             K.own_state_write_refusal(error, CYCLE_EPOCH_RETRY_ENTRYPOINT))
+        if K.own_state_fault(error) or isinstance(error, FederationGatewayTransportError):
+            # The crossing is recorded (a replay returns the same receipts); its answer
+            # or acknowledgement is not, so the frame is left for redelivery.
+            return _left_pending(organization, frame,
+                                 K.own_state_write_refusal(error, CYCLE_EPOCH_RETRY_ENTRYPOINT))
+        # Anything else is the frame's refusal (for one, RESPONSE_ID_COLLISION): BLOCKED, not redelivered.
+        refusal = K.frame_failure_refusal(error)
+        ack = acknowledge_frame(organization, frame, "BLOCKED", hb_epoch=hb_epoch)
+        return {
+            "schema_version": "stegverse.org-federation-gateway-cycle.v1",
+            "organization": organization,
+            "state": "REFUSED_QUARANTINED",
+            "packet_id": frame.get("packet_id"),
+            "frame_sha256": frame.get("frame_sha256"),
+            "failure_code": K.FRAME_REFUSED_QUARANTINED,
+            "refusal": refusal,
+            "frames_consumed": 0,
+            "responses_emitted": 0,
+            "ack_state": ack.get("state"),
+            "gateway_execution_authority": "NONE",
+        }
 
 
 def _left_pending(organization: str, frame: dict[str, Any], refusal: dict[str, Any]) -> dict[str, Any]:
@@ -287,7 +302,7 @@ def _answer(repo_root: Path, registry: dict[str, Any], organization: str, frame:
         elif message_class in {"ecosystem.monitor.request", "ecosystem.work.request", "ecosystem.communication"}:
             response = K.build_control_response(packet, execution)
             # Built once per request, so a redelivery re-submits the same frame (F-REPUB).
-            _, response_frame = K.response_frame_once(repo_root, packet["packet_id"], response, now_ns=now_ns)
+            _, response_frame = K.response_frame_once(repo_root, packet, response, now_ns=now_ns)
             submit_frame(response_frame)
             response_emitted = 1
             response_ref = response_frame["frame_sha256"]
@@ -298,7 +313,7 @@ def _answer(repo_root: Path, registry: dict[str, Any], organization: str, frame:
             # An endpoint-adapter service stamps time, so a CLOCK frame never reaches it.
             if service and service.get("endpoint_adapter") and now_ns is not None:
                 response = K.build_endpoint_response(packet, execution)
-                _, response_frame = K.response_frame_once(repo_root, packet["packet_id"], response, now_ns=now_ns)
+                _, response_frame = K.response_frame_once(repo_root, packet, response, now_ns=now_ns)
                 submit_frame(response_frame)
                 response_emitted = 1
                 response_ref = response_frame["frame_sha256"]

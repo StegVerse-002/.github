@@ -63,6 +63,16 @@ SITECUSTOMIZE = textwrap.dedent(f"""
                 handle.write("now\\n")
             return _base.fromtimestamp({CLOCK_NS} / 1e9, tz)
     _d.datetime = _FixedClock
+    # B-P36q probe: fail the Nth durable write (fsync) in a subprocess, when asked.
+    _fail_at = os.environ.get("STEGVERSE_TEST_FSYNC_FAIL_AT")
+    if _fail_at:
+        _real_fsync, _count = os.fsync, [0]
+        def _fsync(fd):
+            _count[0] += 1
+            if _count[0] == int(_fail_at):
+                raise OSError(5, "injected fault at durable write " + _fail_at)
+            return _real_fsync(fd)
+        os.fsync = _fsync
 """)
 
 
@@ -1278,6 +1288,100 @@ class ContentCollisionIsRefusedBeforeAnything(ConsumingRoutes):
         self.assertEqual(replayed["result"]["status"], "CONSUMED")
         self.assertEqual(sorted(json.dumps(r, sort_keys=True) for r in self.receipts()), receipts)
         self.assertEqual(len(self.peer_frames()), 1)
+
+
+class ResponseOnceIsKeyedToItsRequest(ConsumingRoutes):
+    """A stored response answers only its own request; any other request meeting it is RESPONSE_ID_COLLISION."""
+
+    def communication(self, packet_id, communication_id, subject):
+        return self.publish_inbound(THIS.lower() + ".org-control",
+                                    {"message_class": "ecosystem.communication", "communication_id": communication_id,
+                                     "subject": subject, "body": {}}, packet_id, epoch=SUPPLIED)
+
+    def peer_frames(self):
+        return [frame for frame in self.frames() if frame["destination_org"] == PEER]
+
+    def test_another_request_never_takes_the_earlier_response(self):
+        self.communication("request-a", "shared-communication", "a")
+        answered, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertEqual(answered["result"]["status"], "CONSUMED")
+        response, = self.peer_frames()
+        for packet_id, subject in (("request-b", "b"), ("request-a", "a, rewritten")):
+            with self.subTest(request=packet_id):
+                self.communication(packet_id, "shared-communication", subject)
+                refused, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+                self.assertEqual(refused["result"]["status"], "REFUSED_QUARANTINED")
+                self.assertRefusal(refused["result"]["refusal"], "RESPONSE_ID_COLLISION")
+                self.assertIsNone(refused["response_publication"])
+                self.assertEqual(self.peer_frames(), [response])
+
+
+class MultiStepWritesResume(ConsumingRoutes):
+    """B-P36q: a fault at any durable write of the self-characterization boundary leaves it resumable."""
+
+    WRITES = 7  # five live rows, the bundle, the organization ledger root
+
+    def setUp(self):
+        super().setUp()
+        (self.root / "resident-runtime/self_characterization_surface.py").write_text(textwrap.dedent(f"""
+            import argparse, json
+            from pathlib import Path
+            ap = argparse.ArgumentParser()
+            for name in ("--ingress", "--entity-id", "--out"):
+                ap.add_argument(name)
+            a = ap.parse_args()
+            Path(a.out).write_text(json.dumps({{"state": "ATTEMPT_RECORDED", "state_root": {str(self.self_char)!r}}}))
+        """))
+
+    def fresh_state_root(self):
+        if self.self_char.exists():
+            shutil.rmtree(self.self_char)
+        self.self_char.mkdir()
+        (self.self_char / "REPOSITORY_LEDGER_ROOT.json").write_text(json.dumps(
+            {"scope_id": "StegVerse-002/.github", "root_id": "REPO-1", "root_hash": "0" * 64, "range": {}}))
+        (self.self_char / "S0.json").write_text(json.dumps({"run_id": "run-b-p36q"}))
+
+    def live_rows(self):
+        return [json.loads(line) for line in
+                (self.self_char / "ORG_BOUNDARY_RECEIPTS.live.jsonl").read_text().splitlines()]
+
+    def assertCompletedOnce(self):
+        consumed, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertEqual(consumed["result"]["status"], "CONSUMED")
+        rows = self.live_rows()
+        self.assertEqual([row["kind"] for row in rows],
+                         ["INGRESS_ACCEPTED", "DISPATCHED", "CONSUMED", "RESULT_BOUND", "EGRESS_EMITTED"])
+        self.assertEqual(len({row["receipt_id"] for row in rows}), 5)
+        bundle = json.loads((self.self_char / "ORG_BOUNDARY_RECEIPTS.json").read_text())
+        self.assertEqual(bundle["receipts"], rows)
+        self.assertTrue((self.self_char / "ORGANIZATION_LEDGER_ROOT.json").is_file())
+        self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
+
+    def test_a_fault_at_every_durable_write_resumes_and_completes_once(self):
+        for step in range(1, self.WRITES + 1):
+            with self.subTest(durable_write=step):
+                self.fresh_state_root()
+                self.publish_inbound(THIS.lower() + ".self-characterization", {"probe": f"step-{step}"},
+                                     f"b-p36q-{step}", epoch=SUPPLIED)
+                with mock.patch.dict(os.environ, {"STEGVERSE_TEST_FSYNC_FAIL_AT": str(step)}):
+                    pending, = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+                self.assertEqual(pending["result"]["status"], "PENDING_DISPATCH_IO_FAILED")
+                refusal = pending["result"]["refusal"]
+                self.assertRefusal(refusal, "FRAME_DISPATCH_IO_FAILED")
+                self.assertIs(refusal["terminal"], False)
+                self.assertEqual(refusal["failed_predicate"], "PROCESS_BOUNDARY_WRITE_FAULT")
+                self.assertIsNone(pending["seen_marker"])
+                self.assertCompletedOnce()
+
+    def test_a_torn_live_row_is_dropped_and_the_history_resumes(self):
+        self.fresh_state_root()
+        self.publish_inbound(THIS.lower() + ".self-characterization", {"probe": "torn"}, "b-p36q-torn",
+                             epoch=SUPPLIED)
+        with mock.patch.dict(os.environ, {"STEGVERSE_TEST_FSYNC_FAIL_AT": "3"}):
+            self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        with (self.self_char / "ORG_BOUNDARY_RECEIPTS.live.jsonl").open("a") as handle:
+            handle.write('{"kind":"RESULT_BO')
+        self.assertCompletedOnce()
 
 
 class EcosystemControlStampsTheSuppliedEpoch(ConsumingRoutes):

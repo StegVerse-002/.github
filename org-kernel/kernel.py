@@ -282,6 +282,9 @@ def dispatch(root:Path, packet:dict[str,Any], *, mesh_root:Path|None=None,
             envelope.write_text(json.dumps(packet,indent=2,sort_keys=True)+"\n")
             completed=subprocess.run(["python3",str(processor),"--envelope",str(envelope),"--out",str(out),
                                       "--hb-epoch",str(hb_epoch)],cwd=root,capture_output=True,text=True,check=False)
+            if completed.returncode==PROCESS_BOUNDARY_WRITE_FAULT:
+                # The boundary could not write its own state; its history resumes on retry (B-P36q).
+                raise OwnStateWriteFailed("PROCESS_BOUNDARY_WRITE_FAULT",(completed.stdout or completed.stderr)[-512:])
             if completed.returncode!=0 or not out.is_file():
                 raise ValueError("endpoint_adapter_execution_failed:"+completed.stderr[-512:])
             result=json.loads(out.read_text())
@@ -321,10 +324,11 @@ def dispatch(root:Path, packet:dict[str,Any], *, mesh_root:Path|None=None,
 def persist_outbox(root:Path, frame:dict[str,Any])->Path:
     out=root/"resident-runtime/federation/outbox"; out.mkdir(parents=True,exist_ok=True)
     path=out/(hashlib.sha256(frame["packet_id"].encode()).hexdigest()+".json")
-    if path.exists():
-        if json.loads(path.read_text())!=frame: raise ValueError("write_once_collision")
+    existing=_existing_json(path)
+    if existing is not None:
+        if existing!=frame: raise ValueError("write_once_collision")
         return path
-    path.write_text(json.dumps(frame,indent=2,sort_keys=True)+"\n")
+    _write_json_atomic(path,frame)
     return path
 
 INGEST_EPOCH_RETRY_ENTRYPOINT=("org-kernel/kernel.py::ingest_frame (a frame whose heartbeat is supplied, "
@@ -401,6 +405,16 @@ HB_REFERENCE_INVALID="HB_REFERENCE_INVALID"
 FRAME_INTEGRITY_INVALID="FRAME_INTEGRITY_INVALID"
 FRAME_INGEST_FAILED="FRAME_INGEST_FAILED"
 FRAME_DISPATCH_IO_FAILED="FRAME_DISPATCH_IO_FAILED"
+
+#: ``process_boundary.py``'s exit status for a fault writing its own state.
+PROCESS_BOUNDARY_WRITE_FAULT=75
+
+class OwnStateWriteFailed(RuntimeError):
+    """A fault writing this repository's own state, raised where no ledger class applies."""
+    own_state_write_failure=True
+    def __init__(self, failed_predicate:str, detail:str)->None:
+        super().__init__(failed_predicate+": "+detail)
+        self.failed_predicate=failed_predicate
 
 #: Collisions in this boundary's own write-once state, not in what a frame carries.
 OWN_STATE_COLLISIONS={"federation_seen_marker_collision"}
@@ -578,13 +592,12 @@ def publish_frame(frame:dict[str,Any], *, root:Path|None=None)->Path:
     frames.mkdir(parents=True,exist_ok=True)
     frame_id=hashlib.sha256((frame["packet_id"]+"|"+frame["frame_sha256"]).encode()).hexdigest()
     path=frames/(frame_id+".json")
-    if path.exists():
-        existing=json.loads(path.read_text())
+    existing=_existing_json(path)
+    if existing is not None:
         if existing!=frame:
             raise ValueError("federation_frame_write_once_collision")
         return path
-    path.write_text(json.dumps(frame,indent=2,sort_keys=True)+"\n")
-    return path
+    return _write_json_atomic(path,frame)
 
 #: The largest frames.d file a scan reads (B-P36p). A carrier frame is a few KiB.
 FRAME_FILE_MAX_BYTES=1<<20
@@ -798,11 +811,10 @@ def persist_work_request(root:Path, packet:dict[str,Any])->dict[str,Any]:
       "execution_authority_constraint":"CONSTRAINT_VARIABLE",
       "time_constraint":"CONSTRAINT_VARIABLE"
     }
-    if path.exists():
-        if json.loads(path.read_text())!=record:
-            raise ValueError("work_intake_write_once_collision")
-    else:
-        path.write_text(json.dumps(record,indent=2,sort_keys=True)+"\n")
+    if _existing_json(path) not in (None,record):
+        raise ValueError("work_intake_write_once_collision")
+    if _existing_json(path) is None:
+        _write_json_atomic(path,record)
     return {"state":record["state"],"intake_ref":str(path),"execution_authority_inferred":False}
 
 def handle_control_message(root:Path, packet:dict[str,Any], registry:dict[str,Any], *,
@@ -948,13 +960,13 @@ def consume_and_respond(repo_root:Path, *, mesh_root:Path|None=None, seen:set[st
         if result.get("status")=="CONSUMED" and message_class in {
             "ecosystem.monitor.request","ecosystem.work.request","ecosystem.communication"}:
             response=build_control_response(packet,result["execution_result"])
-            response_publication=publish_response_once(repo_root,packet["packet_id"],response,
+            response_publication=publish_response_once(repo_root,packet,response,
                                                        mesh_root=mesh_root,now_ns=now_ns)
         elif result.get("status")=="CONSUMED" and not payload.get("response_to_packet_id"):
             service=next((svc for svc in registry["services"] if svc.get("service_id")==packet["destination"]["service"]),None)
             if service and service.get("endpoint_adapter"):
                 response=build_endpoint_response(packet,result["execution_result"])
-                response_publication=publish_response_once(repo_root,packet["packet_id"],response,
+                response_publication=publish_response_once(repo_root,packet,response,
                                                            mesh_root=mesh_root,now_ns=now_ns)
         marker=mark_federation_frame_seen(repo_root,item["path"],item["frame"],result)
         # The frame's own epoch, when it lent one, is inbound provenance; this
@@ -1043,6 +1055,15 @@ def federation_seen_frame_names(repo_root:Path)->set[str]:
             continue
     return names
 
+def _existing_json(path:Path)->Any:
+    """A write-once document already at ``path``, or None when absent or torn (B-P36q: rewritten, never refused)."""
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except ValueError:
+        return None
+
 def _write_json_atomic(path:Path, value:dict[str,Any])->Path:
     """Write a JSON document by same-directory replacement, so a failed write leaves no partial file."""
     fd,temp=tempfile.mkstemp(prefix=".write-",suffix=".tmp",dir=str(path.parent))
@@ -1070,32 +1091,59 @@ def _write_once_marker(marker_path:Path, marker:dict[str,Any])->Path:
 
 RESPONSES_DIR="resident-runtime/federation/responses.d"
 
-def response_frame_once(repo_root:Path, request_packet_id:str, response:dict[str,Any], *,
+RESPONSE_ID_COLLISION="RESPONSE_ID_COLLISION"
+
+class ResponseIdCollision(ValueError):
+    """Another request already holds this response: refused six-field, never handed the earlier answer."""
+    def __init__(self, request:dict[str,Any], held:dict[str,Any])->None:
+        self.refusal={"disposition":"FAIL_CLOSED","failure_code":RESPONSE_ID_COLLISION,
+                      "failed_predicate":"ONE_RESPONSE_ANSWERS_ONE_REQUEST",
+                      "detail":"request "+str(request.get("packet_id"))+" ("+sha(request)+") would take the response "
+                               "already built for request "+str(held.get("request_packet_id"))+" ("
+                               +str(held.get("request_sha256"))+")",
+                      "required_evidence_or_repair":"the sender emits this request under its own packet and communication id",
+                      "retry_entrypoint":"the sender's hop",
+                      "owning_existing_goal":HB_EPOCH_OWNING_EXISTING_GOAL,
+                      "next_attempt":"none for this request; the earlier response stands",
+                      "derived_from_clock":False,"consequence_committed":False}
+        super().__init__(RESPONSE_ID_COLLISION+": "+self.refusal["detail"])
+
+def response_frame_once(repo_root:Path, request:dict[str,Any], response:dict[str,Any], *,
                         now_ns:int)->tuple[dict[str,Any],dict[str,Any]]:
     """The response packet and frame for a request, built once and then reused byte for byte (F-REPUB).
 
     A fault after a response is published (the seen marker, a gateway
     acknowledgement) leaves the request pending. Its retry publishes this same
-    frame again, never a second response for the same request packet id.
+    frame again, never a second response. The stored response is indexed by
+    the request packet id and by the response packet id, and is reused only
+    for the same request (packet id and digest): any other request meeting
+    either index is RESPONSE_ID_COLLISION and is never handed it.
     """
     directory=repo_root/RESPONSES_DIR
-    path=directory/(hashlib.sha256(str(request_packet_id).encode()).hexdigest()+".json")
-    if path.exists():
-        try:
-            stored=json.loads(path.read_text())
-        except ValueError:
-            stored=None  # a torn earlier write: rebuilt below
-        if isinstance(stored,dict) and stored.get("request_packet_id")==request_packet_id:
-            return stored["packet"],stored["frame"]
-    frame=carrier_frame(response,now_ns=now_ns)
+    request_sha=sha(request)
+    keys=[directory/("request-"+hashlib.sha256(str(request.get("packet_id")).encode()).hexdigest()+".json"),
+          directory/("response-"+hashlib.sha256(str(response.get("packet_id")).encode()).hexdigest()+".json")]
+    for path in keys:
+        held=_existing_json(path)
+        if not isinstance(held,dict):
+            continue
+        if held.get("request_packet_id")!=request.get("packet_id") or held.get("request_sha256")!=request_sha:
+            raise ResponseIdCollision(request,held)
+        record=held
+        break
+    else:
+        record={"request_packet_id":request.get("packet_id"),"request_sha256":request_sha,
+                "packet":response,"frame":carrier_frame(response,now_ns=now_ns)}
     directory.mkdir(parents=True,exist_ok=True)
-    _write_json_atomic(path,{"request_packet_id":request_packet_id,"packet":response,"frame":frame})
-    return response,frame
+    for path in keys:
+        if _existing_json(path)!=record:
+            _write_json_atomic(path,record)
+    return record["packet"],record["frame"]
 
-def publish_response_once(repo_root:Path, request_packet_id:str, response:dict[str,Any], *,
+def publish_response_once(repo_root:Path, request:dict[str,Any], response:dict[str,Any], *,
                           mesh_root:Path|None, now_ns:int)->dict[str,Any]:
-    """``publish_packet`` for a response, idempotent per request packet id (see ``response_frame_once``)."""
-    packet,frame=response_frame_once(repo_root,request_packet_id,response,now_ns=now_ns)
+    """``publish_packet`` for a response, idempotent per request (see ``response_frame_once``)."""
+    packet,frame=response_frame_once(repo_root,request,response,now_ns=now_ns)
     path=publish_frame(frame,root=mesh_root)
     return {"packet":packet,"frame":frame,"path":str(path)}
 
