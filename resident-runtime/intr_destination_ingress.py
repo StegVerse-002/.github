@@ -426,8 +426,10 @@ def _main() -> int:
             if args.payload is None or args.registry is None:
                 raise SystemExit("receive requires --payload and --registry")
             result = receive(
-                json.loads(args.payload.read_text(encoding="utf-8")),
-                registry=json.loads(args.registry.read_text(encoding="utf-8")),
+                kernel.read_json_input(args.payload, argument="--payload",
+                                       retry_entrypoint=RECEIVE_EPOCH_RETRY_ENTRYPOINT),
+                registry=kernel.read_json_input(args.registry, argument="--registry",
+                                                retry_entrypoint=RECEIVE_EPOCH_RETRY_ENTRYPOINT),
                 packet_id=args.packet_id, hb_epoch=args.hb_epoch)
     except ValueError as exc:
         # Each loaded kernel has its own SuppliedEpochRefused class.

@@ -1007,7 +1007,11 @@ class OwnStateWriteFaults(ConsumingRoutes):
         with mock.patch.object(os, "fsync", fsync):
             results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
         self.assertTrue(failed)
-        self.assertPendingNoMarker(results, "OSError")
+        self.assertPendingNoMarker(results, "LEDGER_HEAD_COMMITTED_DURABILITY_FAILED")
+        # F-POST-HEAD: the record says what happened; it never claims nothing was published.
+        self.assertIn("HEAD committed; durability step failed; retry is idempotent",
+                      results[0]["result"]["refusal"]["detail"])
+        self.assertNotIn("nothing", results[0]["result"]["refusal"]["next_attempt"])
         receipt, = self.chain(self.repo_ledger)
         head = json.loads((self.repo_ledger / "HEAD.json").read_text())
         self.assertEqual(head["receipt_sha256"].split(":", 1)[1] + ".json", receipt)
@@ -1475,7 +1479,7 @@ class WriterEntrypointsNeverTrace(ConsumingRoutes):
         cases = (
             ("receive, payload not JSON", "resident-runtime/intr_destination_ingress.py",
              ("--payload", str(garbage), "--registry", str(registry), "--hb-epoch", str(SUPPLIED)),
-             "ENTRYPOINT_INPUT_REFUSED", 2),
+             "ENTRYPOINT_INPUT_REFUSED", 1),
             ("receive, unwritable --out", "resident-runtime/intr_destination_ingress.py",
              ("--payload", str(payload), "--registry", str(registry), "--packet-id", "writer-out",
               "--hb-epoch", str(SUPPLIED), "--out", str(blocker / "result.json")),
@@ -1499,6 +1503,67 @@ class WriterEntrypointsNeverTrace(ConsumingRoutes):
                 self.assertEqual(completed.returncode, status, completed.stdout + completed.stderr)
                 self.assertRefusal(json.loads(completed.stdout.strip().splitlines()[-1]), code)
 
+    def test_a_bad_input_is_a_terminal_refusal_with_nothing_written(self):
+        """F-INPUT-TRACE: every CLI input argument, missing or not JSON, is the caller's fault."""
+        good = self.work / "good.json"
+        good.write_text(json.dumps(diagnostic("input-trace")))
+        registry = str(self.root / "org-boundary/registry/services.json")
+        missing = str(self.work / "missing.json")
+        garbage = self.work / "garbage.json"
+        garbage.write_text("{not json")
+        binary = self.work / "binary.json"
+        binary.write_bytes(b"\xff\xfe")
+        listed = self.work / "list.json"
+        listed.write_text("[1, 2]")
+        files = {"missing path": missing, "not JSON": str(garbage), "a directory": str(self.work),
+                 "not UTF-8": str(binary), "the wrong top-level type": str(listed)}
+        epoch = ("--hb-epoch", str(SUPPLIED))
+        file_arguments = (
+            ("resident-runtime/intr_destination_ingress.py", "--payload",
+             lambda bad: ("--payload", bad, "--registry", registry, *epoch)),
+            ("resident-runtime/intr_destination_ingress.py", "--registry",
+             lambda bad: ("--payload", str(good), "--registry", bad, *epoch)),
+            ("resident-runtime/organization_egress_boundary.py", "--payload",
+             lambda bad: ("--destination-organization", PEER, "--payload", bad, "--standing", str(good), *epoch)),
+            ("resident-runtime/organization_egress_boundary.py", "--standing",
+             lambda bad: ("--destination-organization", PEER, "--payload", str(good), "--standing", bad, *epoch)),
+            ("resident-runtime/aggregate_repo_transition.py", "--repo-receipt",
+             lambda bad: ("--repo-receipt", bad, "--predecessor-org-state-sha256", "sha256:" + "c" * 64,
+                          "--successor-org-state-sha256", "sha256:" + "d" * 64, *epoch)),
+            ("org-boundary/runtime/process_boundary.py", "--envelope",
+             lambda bad: ("--envelope", bad, "--registry", registry, "--out", str(self.work / "out.json"), *epoch)),
+            ("org-boundary/runtime/process_boundary.py", "--registry",
+             lambda bad: ("--envelope", str(good), "--registry", bad, "--out", str(self.work / "out.json"), *epoch)),
+        )
+        inline_arguments = (
+            (".stegverse/transition-ledger/emit.py", "--evidence-json",
+             lambda bad: ("--transition-id", "input", "--transition-class", "PROBE",
+                          "--predecessor-state-sha256", "sha256:" + "a" * 64,
+                          "--successor-state-sha256", "sha256:" + "b" * 64, "--evidence-json", bad, *epoch)),
+            ("resident-runtime/aggregate_repo_transition.py", "--boundary-evidence-json",
+             lambda bad: ("--repo-receipt", str(good), "--predecessor-org-state-sha256", "sha256:" + "c" * 64,
+                          "--successor-org-state-sha256", "sha256:" + "d" * 64, "--boundary-evidence-json", bad,
+                          *epoch)),
+            ("resident-runtime/ecosystem_control.py", "--body-json",
+             lambda bad: (*epoch, "send-message", "--subject", "s", "--body-json", bad)),
+        )
+        cases = [(relative, argument, label, build(bad)) for relative, argument, build in file_arguments
+                 for label, bad in files.items()]
+        cases += [(relative, argument, label, build(bad)) for relative, argument, build in inline_arguments
+                  for label, bad in (("not JSON", "{not json"), ("the wrong top-level type", "[1, 2]"))]
+        for relative, argument, label, argv in cases:
+            with self.subTest(entrypoint=Path(relative).name, argument=argument, input=label):
+                completed = self.run_entrypoint(relative, *argv)
+                self.assertNotIn("Traceback", completed.stderr)
+                self.assertNotEqual(completed.returncode, 0)
+                refusal = json.loads(completed.stdout.strip().splitlines()[-1])
+                self.assertRefusal(refusal, "ENTRYPOINT_INPUT_REFUSED")
+                self.assertIs(refusal["terminal"], True)
+                self.assertIn(argument, refusal["detail"])
+        self.assertNoLedger()
+        self.assertFalse(self.mesh.exists())
+        self.assertFalse(self.self_char.exists())
+
     def test_the_organization_writer_reports_its_own_write_fault(self):
         emit = _load("marker_emit_trace", self.root, ".stegverse/transition-ledger/emit.py")
         source = self.work / "source-receipt.json"
@@ -1509,6 +1574,46 @@ class WriterEntrypointsNeverTrace(ConsumingRoutes):
         self.assertWriteFault(self.run_entrypoint("resident-runtime/aggregate_repo_transition.py", *argv, fail_at=1))
         completed = self.run_entrypoint("resident-runtime/aggregate_repo_transition.py", *argv)
         self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertEqual(len(list((self.org_ledger / "receipts").glob("*.json"))), 1)
+
+
+class CommittedAppendsRetryIdempotently(ConsumingRoutes):
+    """F-POST-HEAD: a fault after HEAD is replaced leaves a committed append; its retry returns the recorded receipt."""
+
+    def fail_once_after_head(self, ledger_root):
+        real_fsync, failed = os.fsync, []
+
+        def fsync(fd):
+            if not failed and os.readlink(f"/proc/self/fd/{fd}") == str(ledger_root):
+                failed.append(fd)
+                raise OSError(5, "directory sync failed after HEAD")
+            return real_fsync(fd)
+        return mock.patch.object(os, "fsync", fsync), failed
+
+    def test_each_writer_returns_the_recorded_receipt_on_retry(self):
+        emit = _load("marker_emit_post_head", self.root, ".stegverse/transition-ledger/emit.py")
+        aggregate = _load("marker_aggregate_post_head", self.root, "resident-runtime/aggregate_repo_transition.py")
+        arguments = ("post-head", "PROBE", "sha256:" + "a" * 64, "sha256:" + "b" * 64, {"n": 1}, "NONE")
+        patch, failed = self.fail_once_after_head(self.repo_ledger)
+        with patch, self.assertRaises(emit.ledger_store.LedgerWriteFailed) as raised:
+            emit.append(*arguments, hb_epoch=SUPPLIED)
+        self.assertTrue(failed)
+        self.assertEqual(raised.exception.failed_predicate, "LEDGER_HEAD_COMMITTED_DURABILITY_FAILED")
+        self.assertIn("HEAD committed; durability step failed; retry is idempotent", str(raised.exception))
+        source = emit.append(*arguments, hb_epoch=SUPPLIED)
+        head = json.loads((self.repo_ledger / "HEAD.json").read_text())
+        self.assertEqual(source["receipt_sha256"], head["receipt_sha256"])
+        self.assertEqual(len(list((self.repo_ledger / "receipts").glob("*.json"))), 1)
+
+        org_arguments = (source, "REPO_STATE_PROPAGATION", "sha256:" + "c" * 64, "sha256:" + "d" * 64, {}, "NONE")
+        patch, failed = self.fail_once_after_head(self.org_ledger)
+        with patch, self.assertRaises(aggregate.LedgerWriteFailed) as raised:
+            aggregate.append(*org_arguments, hb_epoch=SUPPLIED)
+        self.assertTrue(failed)
+        self.assertEqual(raised.exception.failed_predicate, "LEDGER_HEAD_COMMITTED_DURABILITY_FAILED")
+        recorded = aggregate.append(*org_arguments, hb_epoch=SUPPLIED)
+        head = json.loads((self.org_ledger / "HEAD.json").read_text())
+        self.assertEqual(recorded["receipt_sha256"], head["receipt_sha256"])
         self.assertEqual(len(list((self.org_ledger / "receipts").glob("*.json"))), 1)
 
 

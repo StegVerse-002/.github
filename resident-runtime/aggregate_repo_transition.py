@@ -280,8 +280,11 @@ def _main():
     args = parser.parse_args()
     try:
         record = append(
-            load(args.repo_receipt), args.org_transition_class, args.predecessor_org_state_sha256,
-            args.successor_org_state_sha256, json.loads(args.boundary_evidence_json),
+            kernel.read_json_input(args.repo_receipt, argument="--repo-receipt",
+                                   retry_entrypoint=EPOCH_RETRY_ENTRYPOINT),
+            args.org_transition_class, args.predecessor_org_state_sha256, args.successor_org_state_sha256,
+            kernel.parse_json_input(args.boundary_evidence_json, argument="--boundary-evidence-json",
+                                    retry_entrypoint=EPOCH_RETRY_ENTRYPOINT),
             args.authority_effect, hb_epoch=args.hb_epoch)
     except OrgLedgerEpochRefused as exc:
         print(json.dumps(exc.refusal, sort_keys=True))

@@ -443,6 +443,47 @@ def own_state_write_exit(error:BaseException, retry_entrypoint:str)->int:
 
 ENTRYPOINT_INPUT_REFUSED="ENTRYPOINT_INPUT_REFUSED"
 
+class InputRefused(ValueError):
+    """A CLI input that is missing or not the JSON it must be: the caller's fault, terminal (F-INPUT-TRACE)."""
+    def __init__(self, refusal:dict[str,Any])->None:
+        super().__init__(refusal["failure_code"]+": "+refusal["detail"])
+        self.refusal=refusal
+
+def input_refusal(error:BaseException, argument:str, retry_entrypoint:str)->dict[str,Any]:
+    """The terminal six-field refusal of a bad CLI input. Nothing was written."""
+    refusal=_epoch_refusal(ENTRYPOINT_INPUT_REFUSED,argument+": "+type(error).__name__+": "+str(error),
+                           retry_entrypoint,repair="the caller supplies "+argument+" as a readable JSON document of the expected type")
+    refusal["failed_predicate"]=type(error).__name__
+    refusal["terminal"]=True
+    return refusal
+
+def _expect(value:Any, expect:type|None, argument:str, retry_entrypoint:str)->Any:
+    if expect is not None and not isinstance(value,expect):
+        raise InputRefused(input_refusal(TypeError("top-level JSON is "+type(value).__name__+", not "+expect.__name__),
+                                         argument,retry_entrypoint))
+    return value
+
+def read_json_input(path:Any, *, argument:str, retry_entrypoint:str, expect:type|None=dict)->Any:
+    """Read a CLI input file before anything is written, outside the own-state fault classifier.
+
+    A missing file, a directory, non-UTF-8 bytes, non-JSON text or the wrong
+    top-level type is the caller's fault: InputRefused, terminal, never a
+    non-terminal write fault.
+    """
+    try:
+        value=json.loads(Path(path).read_bytes().decode("utf-8"))
+    except (OSError,UnicodeDecodeError,ValueError) as error:
+        raise InputRefused(input_refusal(error,argument,retry_entrypoint)) from None
+    return _expect(value,expect,argument,retry_entrypoint)
+
+def parse_json_input(text:Any, *, argument:str, retry_entrypoint:str, expect:type|None=dict)->Any:
+    """``read_json_input`` for a JSON argument given inline."""
+    try:
+        value=json.loads(text)
+    except (TypeError,ValueError) as error:
+        raise InputRefused(input_refusal(error,argument,retry_entrypoint)) from None
+    return _expect(value,expect,argument,retry_entrypoint)
+
 def run_writer_cli(main:Any, retry_entrypoint:str)->int:
     """Run a writer's command-line body so it never ends in a traceback (F-WRITER-TRACE).
 
@@ -460,10 +501,11 @@ def run_writer_cli(main:Any, retry_entrypoint:str)->int:
         carried=getattr(error,"refusal",None)
         if isinstance(carried,dict) and carried.get("failure_code"):
             print(json.dumps(carried,sort_keys=True))
-            return 1
+            return 2 if carried.get("failure_code")==ENTRYPOINT_INPUT_REFUSED else 1
         refusal=_epoch_refusal(ENTRYPOINT_INPUT_REFUSED,type(error).__name__+": "+str(error),retry_entrypoint,
                                repair="the caller supplies well-formed input; nothing was written for it")
         refusal["failed_predicate"]=type(error).__name__
+        refusal["terminal"]=True
         print(json.dumps(refusal,sort_keys=True))
         return 2
     return 0 if status is None else status
@@ -471,8 +513,9 @@ def run_writer_cli(main:Any, retry_entrypoint:str)->int:
 def own_state_write_refusal(error:BaseException, retry_entrypoint:str)->dict[str,Any]:
     """The six-field, non-terminal refusal for a fault writing this repository's own state.
 
-    Nothing the ledgers name was published, so the same call is retried and
-    lands once; the frame or input is not at fault.
+    The same call is retried and lands once: either nothing the ledgers name was
+    published, or the append committed (F-POST-HEAD) and the retry returns its
+    recorded receipt. The frame or input is not at fault.
     """
     return {"disposition":"FAIL_CLOSED","failure_code":FRAME_DISPATCH_IO_FAILED,
             "failed_predicate":getattr(error,"failed_predicate",None) or type(error).__name__,
@@ -480,7 +523,8 @@ def own_state_write_refusal(error:BaseException, retry_entrypoint:str)->dict[str
             "required_evidence_or_repair":"this repository's own state is writable again; the same input is retried",
             "retry_entrypoint":retry_entrypoint,
             "owning_existing_goal":HB_EPOCH_OWNING_EXISTING_GOAL,
-            "next_attempt":"the next cycle retries it; no marker was written and no ledger entry was left unnamed",
+            "next_attempt":("the next cycle retries the same input; an append that already committed returns its "
+                            "recorded receipt, so it lands exactly once"),
             "terminal":False,"derived_from_clock":False,"consequence_committed":False}
 
 def _check_reference_identity(reference:dict[str,Any])->None:
@@ -605,7 +649,7 @@ __all__=["hb_reference","HB_EPOCH_NOT_SUPPLIED","HB_EPOCH_INVALID","SuppliedEpoc
          "ACCEPTS_CARRIED_CROSSINGS","HB_EPOCH_CONFLICT",
          "SHARED_VALIDATOR_SHA256","supplied_epoch_failure","stamps_time",
          "SUPPLIED_EPOCH_ENV","caller_epoch","epoch_now_ns","frame_epoch","consuming_epoch","carried_refusal",
-         "FRAME_REFUSED_QUARANTINED","admit_frame","FRAME_DISPATCH_IO_FAILED","own_state_fault","own_state_write_refusal","frame_failure_refusal","FRAME_FILE_MAX_BYTES","answers",
+         "FRAME_REFUSED_QUARANTINED","admit_frame","InputRefused","read_json_input","parse_json_input","run_writer_cli","FRAME_DISPATCH_IO_FAILED","own_state_fault","own_state_write_refusal","frame_failure_refusal","FRAME_FILE_MAX_BYTES","answers",
          "HB_REFERENCE_INVALID","FRAME_INTEGRITY_INVALID","FRAME_INGEST_FAILED","derive_channel","carrier_frame","recover_packet","dispatch","persist_outbox","ingest_frame",
          "capability_ingress","CAPABILITY_INGRESS_ROLE"]
 

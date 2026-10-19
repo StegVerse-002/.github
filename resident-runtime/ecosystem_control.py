@@ -57,7 +57,7 @@ def _main(argv=None)->int:
             result=K.collect_ecosystem_responses(org,args.communication_id)
         print(json.dumps(result,indent=2,sort_keys=True))
         return 0
-    body=json.loads(args.body_json)
+    body=K.parse_json_input(args.body_json,argument="--body-json",retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
     if os.getenv("STEGVERSE_ORG_FEDERATION_GATEWAY_URL","").strip():
         out=GW.publish_ecosystem_via_gateway(
             repo_root=ROOT,

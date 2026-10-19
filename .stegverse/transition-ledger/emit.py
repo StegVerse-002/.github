@@ -213,7 +213,10 @@ def _main():
     try:
         record = append(
             args.transition_id, args.transition_class, args.predecessor_state_sha256,
-            args.successor_state_sha256, json.loads(args.evidence_json), args.authority_effect,
+            args.successor_state_sha256,
+            kernel.parse_json_input(args.evidence_json, argument="--evidence-json",
+                                    retry_entrypoint=EPOCH_RETRY_ENTRYPOINT),
+            args.authority_effect,
             hb_epoch=args.hb_epoch)
     except RepoLedgerChainBreak as exc:
         print(json.dumps(chain_break_refusal(exc), sort_keys=True))

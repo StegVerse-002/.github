@@ -209,7 +209,8 @@ def run():
         print(json.dumps(refusal,sort_keys=True))
         sys.exit(1)
     hb_epoch=int(kernel.caller_epoch(a.hb_epoch))
-    env=load(a.envelope); reg=load(a.registry)
+    env=kernel.read_json_input(a.envelope,argument="--envelope",retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
+    reg=kernel.read_json_input(a.registry,argument="--registry",retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
     req=["schema_version","packet_id","direction","origin","destination","carrier","intr_profile","transition","payload","evidence"]
     miss=[k for k in req if k not in env]
     if miss: raise SystemExit("missing:"+",".join(miss))

@@ -337,7 +337,7 @@ class PosixLedgerStore:
                     written.append(key)
                     self.put(key, documents[key])
                 self.put(HEAD_KEY, new_head)
-            except BaseException:
+            except BaseException as exc:
                 # A failed write leaves no receipt HEAD does not name. A HEAD that
                 # was replaced before the failure names them, so they stay.
                 try:
@@ -350,6 +350,13 @@ class PosixLedgerStore:
                             self._path(key).unlink()
                         except OSError:
                             pass
+                elif isinstance(exc, Exception):
+                    # F-POST-HEAD: the append is committed; only a durability step
+                    # after HEAD failed. A retry finds the receipt from HEAD.
+                    raise LedgerWriteFailed(
+                        "LEDGER_HEAD_COMMITTED_DURABILITY_FAILED",
+                        "HEAD committed; durability step failed; retry is idempotent ("
+                        + type(exc).__name__ + ": " + str(exc) + ")") from exc
                 raise
             return True
 
