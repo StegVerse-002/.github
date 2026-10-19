@@ -1728,6 +1728,91 @@ class ProcessBoundaryExitSplit(ConsumingRoutes):
         self.assertIs(refusal["terminal"], True)
 
 
+class SelfClosureResumesAfterAnyFault(ConsumingRoutes):
+    """B-P36q on --self-closure: a fault at any receipt or HEAD write, or after HEAD, is non-terminal.
+
+    The retry resumes from what was recorded and closes exactly once, and a
+    rerun of a completed closure returns the recorded receipts.
+    """
+
+    def reset(self):
+        for path in (self.repo_ledger, self.org_ledger, self.mesh, self.root / "resident-runtime/federation"):
+            if path.exists():
+                shutil.rmtree(path)
+
+    def chains(self):
+        return [len(list(root.glob("receipts/*.json"))) if root.exists() else 0
+                for root in (self.repo_ledger, self.org_ledger)]
+
+    def faults(self, kind, at):
+        real_replace, real_fsync, count = os.replace, os.fsync, [0]
+        ledgers = (self.repo_ledger, self.org_ledger)
+        roots = {str(root) for root in ledgers}
+
+        def replace(source, destination, *args, **kwargs):
+            if kind == "put" and any(root in Path(destination).parents for root in ledgers):
+                count[0] += 1
+                if count[0] == at:
+                    raise OSError(5, "injected receipt or HEAD write fault")
+            return real_replace(source, destination, *args, **kwargs)
+
+        def fsync(fd):
+            if kind == "after-head" and os.readlink(f"/proc/self/fd/{fd}") in roots:
+                count[0] += 1
+                if count[0] == at:
+                    raise OSError(5, "injected fault after HEAD")
+            return real_fsync(fd)
+        return mock.patch.object(os, "replace", replace), mock.patch.object(os, "fsync", fsync)
+
+    def close(self, name, communication_id):
+        ingress = _load(name, self.root, "resident-runtime/intr_destination_ingress.py")
+        return ingress.diagnostic_self_closure(communication_id, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+
+    def test_a_fault_at_every_write_and_after_every_head_resumes_and_closes_once(self):
+        for kind, points in (("put", range(1, 13)), ("after-head", range(1, 7))):
+            for at in points:
+                with self.subTest(fault=kind, at=at):
+                    self.reset()
+                    communication_id = f"self-closure-{kind}-{at}"
+                    replace, fsync = self.faults(kind, at)
+                    with replace, fsync, self.assertRaises(Exception) as raised:
+                        self.close(f"marker_self_closure_{kind}_{at}_a", communication_id)
+                    self.assertTrue(getattr(raised.exception, "own_state_write_failure", False), raised.exception)
+                    retried = self.close(f"marker_self_closure_{kind}_{at}_b", communication_id)
+                    self.assertEqual((retried["disposition"], retried["closed"]), ("ALLOW", True))
+                    self.assertEqual(self.chains(), [3, 3])
+                    again = self.close(f"marker_self_closure_{kind}_{at}_c", communication_id)
+                    self.assertEqual((again["disposition"], again["closed"]), ("ALLOW", True))
+                    self.assertEqual(again["closure_repository_receipt_sha256"],
+                                     retried["closure_repository_receipt_sha256"])
+                    self.assertEqual(again["closure_organization_receipt_sha256"],
+                                     retried["closure_organization_receipt_sha256"])
+                    self.assertEqual(self.chains(), [3, 3])
+
+    def test_the_cli_reports_each_fault_six_field_and_the_retry_closes_once(self):
+        argv = [sys.executable, str(self.root / "resident-runtime/intr_destination_ingress.py"), "--self-closure",
+                "--communication-id", "self-closure-cli", "--mesh-root", str(self.mesh), "--hb-epoch", str(SUPPLIED)]
+        at = 0
+        while True:
+            at += 1
+            self.reset()
+            with mock.patch.dict(os.environ, {"STEGVERSE_TEST_FSYNC_FAIL_AT": str(at)}):
+                first = subprocess.run(argv, capture_output=True, text=True, env=dict(os.environ), check=False)
+            self.assertNotIn("Traceback", first.stderr)
+            if first.returncode == 0:
+                break  # past the last durable write
+            with self.subTest(durable_write=at):
+                self.assertEqual(first.returncode, 75, first.stdout + first.stderr)
+                refusal = json.loads(first.stdout.strip().splitlines()[-1])
+                self.assertRefusal(refusal, "FRAME_DISPATCH_IO_FAILED")
+                self.assertIs(refusal["terminal"], False)
+                retried = subprocess.run(argv, capture_output=True, text=True, env=dict(os.environ), check=False)
+                self.assertEqual(retried.returncode, 0, retried.stdout + retried.stderr)
+                self.assertIs(json.loads(retried.stdout.strip().splitlines()[-1])["closed"], True)
+                self.assertEqual(self.chains(), [3, 3])
+        self.assertGreater(at, 12)
+
+
 class EcosystemControlStampsTheSuppliedEpoch(ConsumingRoutes):
     """EPOCH_FREE is not provable for ecosystem_control: every route that stamps takes the supplied epoch."""
 

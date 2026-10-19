@@ -368,14 +368,32 @@ def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
         result["failed_predicate"] = emitted.get("failed_predicate")
         result["detail"] = emitted.get("detail")
         return result
-    # The kernel's dispatch carries the supplied epoch to the receiving operation.
-    consumed_frames = kernel_mod.consume_addressed_frames(ROOT, mesh_root=mesh_root,
-                                                          hb_epoch=hb_epoch)
-    if len(consumed_frames) != 1 or consumed_frames[0]["result"].get("status") != "CONSUMED":
+    # Only the frame this closure emitted is ingested, picked by its packet id, so a
+    # retry is not confused by the answer it published here before (B-P36q). The
+    # kernel's dispatch carries the supplied epoch to the receiving operation, and
+    # the receiving operation replays its recorded receipts on a retry.
+    frame = next((item["frame"] for item in kernel_mod.scan_addressed_frames(origin, root=mesh_root)
+                  if item["frame"].get("packet_id") == emitted["packet_id"]), None)
+    if frame is None:
         result["failed_predicate"] = "SELF_DIAGNOSTIC_IS_CONSUMED_AT_THIS_ADDRESS"
-        result["detail"] = "the emitted frame was not consumed here"
+        result["detail"] = "the emitted frame is not in the mesh"
         return result
-    consumed = consumed_frames[0]["result"]
+    try:
+        consumed = kernel_mod.ingest_frame(ROOT, frame, mesh_root=mesh_root, hb_epoch=hb_epoch,
+                                           explicit=False)
+    except Exception as error:
+        if kernel_mod.own_state_fault(error):
+            # A fault writing this organization's own state: non-terminal, and the
+            # retry resumes from what was recorded (run_writer_cli prints six fields).
+            raise
+        refusal = kernel_mod.frame_failure_refusal(error)
+        result["failed_predicate"] = refusal.get("failed_predicate")
+        result["detail"] = refusal.get("detail")
+        return result
+    if consumed.get("status") != "CONSUMED":
+        result["failed_predicate"] = "SELF_DIAGNOSTIC_IS_CONSUMED_AT_THIS_ADDRESS"
+        result["detail"] = "the emitted frame was not consumed here: " + str(consumed.get("status"))
+        return result
     execution = consumed["execution_result"]
     operation = (execution.get("application_result") or {}).get("receiving_operation_result") or {}
     result["ingress_disposition"] = operation.get("disposition")
@@ -386,7 +404,10 @@ def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
         result["detail"] = operation.get("detail")
         return result
     response = kernel_mod.build_control_response(consumed["packet"], execution)
-    kernel_mod.publish_packet(response, root=mesh_root, now_ns=kernel_mod.epoch_now_ns(hb_epoch))
+    # Built once per request, so a retry re-publishes the same answer (F-REPUB). The
+    # index lives with this run's mesh, the queue the retry reads from.
+    kernel_mod.publish_response_once(Path(mesh_root), consumed["packet"], response, mesh_root=mesh_root,
+                                     now_ns=kernel_mod.epoch_now_ns(hb_epoch))
     closed = egress.close(
         origin, emitted["packet_id"], communication_id, root=ROOT,
         mesh_root=mesh_root, hb_epoch=hb_epoch)
