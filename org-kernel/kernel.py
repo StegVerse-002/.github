@@ -83,11 +83,7 @@ def writer_epoch_refusal(hb_epoch:Any, *, retry_entrypoint:str)->dict[str,Any]|N
     ``head_receipt_sha`` is the current ledger head.
     """
     if isinstance(hb_epoch,dict) and _carried(hb_epoch):
-        return _epoch_refusal(CARRIED_PROVENANCE_UNVERIFIED,
-                              "a CARRIED reference is not verified against the current ledger head: "
-                              +repr(hb_epoch.get("head_receipt_sha")),retry_entrypoint,
-                              repair=("a writer that verifies head_receipt_sha is the current ledger head, that head "
-                                      "derived_from_clock false, and the shared rule passing; none does here"))
+        return carried_refusal(hb_epoch,retry_entrypoint)
     if isinstance(hb_epoch,dict):
         if hb_epoch.get("derived_from_clock") is not False:
             return _epoch_refusal(HB_EPOCH_PROVENANCE_UNMARKED,
@@ -105,6 +101,14 @@ def writer_epoch_refusal(hb_epoch:Any, *, retry_entrypoint:str)->dict[str,Any]|N
     else:
         return None
     return _epoch_refusal(code,detail,retry_entrypoint)
+
+def carried_refusal(reference:dict[str,Any], retry_entrypoint:str)->dict[str,Any]:
+    """CARRIED_PROVENANCE_UNVERIFIED: no writer or ingest here verifies a CARRIED head."""
+    return _epoch_refusal(CARRIED_PROVENANCE_UNVERIFIED,
+                          "a CARRIED reference is not verified against the current ledger head: "
+                          +repr(reference.get("head_receipt_sha")),retry_entrypoint,
+                          repair=("a writer that verifies head_receipt_sha is the current ledger head, that head "
+                                  "derived_from_clock false, and the shared rule passing; none does here"))
 
 def _carried(reference:dict[str,Any])->bool:
     return any(isinstance(reference.get(key),str) and reference[key].upper().startswith("CARRIED")
@@ -288,15 +292,40 @@ INGEST_EPOCH_RETRY_ENTRYPOINT=("org-kernel/kernel.py::ingest_frame (a frame whos
                                "or hb_epoch=, or "+SUPPLIED_EPOCH_ENV+")")
 
 def consuming_epoch(frame:dict[str,Any], hb_epoch:Any=None)->int:
-    """The epoch a frame is consumed at: the one it carries as supplied, else the caller's.
+    """The epoch a frame is consumed at, or SuppliedEpochRefused before anything is written.
 
-    Everything done in response to the frame is stamped from it. A frame with
-    neither is refused six-field before anything is written.
+    A frame with a heartbeat is consumed at that heartbeat's epoch only when it
+    is supplied: a CARRIED claim is refused CARRIED_PROVENANCE_UNVERIFIED (never
+    stripped and taken as supplied), a clock sample is HB_EPOCH_INVALID, and any
+    other reference the shared rule refuses is refused with its code. A caller's
+    epoch never stands in for a frame's own heartbeat. Only a frame with no
+    heartbeat at all takes the caller's epoch. Everything done in response to
+    the frame is stamped from the epoch returned.
     """
-    carried=frame_epoch(frame)
-    if carried is not None:
-        return carried
-    return supplied_epoch(caller_epoch(hb_epoch),retry_entrypoint=INGEST_EPOCH_RETRY_ENTRYPOINT)
+    reference=frame.get("heartbeat_reference") if isinstance(frame,dict) else None
+    if reference is None:
+        return supplied_epoch(caller_epoch(hb_epoch),retry_entrypoint=INGEST_EPOCH_RETRY_ENTRYPOINT)
+    if isinstance(reference,dict) and _carried(reference):
+        raise SuppliedEpochRefused(carried_refusal(reference,INGEST_EPOCH_RETRY_ENTRYPOINT))
+    if isinstance(reference,dict) and "sampled_unix_ns" in reference:
+        raise SuppliedEpochRefused(_epoch_refusal(
+            HB_EPOCH_INVALID,"the frame's heartbeat carries a clock sample (sampled_unix_ns)",
+            INGEST_EPOCH_RETRY_ENTRYPOINT))
+    return supplied_epoch(reference,retry_entrypoint=INGEST_EPOCH_RETRY_ENTRYPOINT)
+
+FRAME_REFUSED_QUARANTINED="FRAME_REFUSED_QUARANTINED"
+
+def admit_frame(frame:dict[str,Any], hb_epoch:Any=None)->tuple[int|None,dict[str,Any]|None]:
+    """A frame's consuming epoch, or the refusal that makes it terminal. Nothing is written."""
+    try:
+        recover_packet(frame)
+        return consuming_epoch(frame,hb_epoch),None
+    except SuppliedEpochRefused as refused:
+        return None,refused.refusal
+    except (ValueError,KeyError,TypeError) as invalid:
+        return None,_epoch_refusal("FRAME_INVALID","the frame does not recover its packet: "+str(invalid),
+                                   INGEST_EPOCH_RETRY_ENTRYPOINT,
+                                   repair="the sender re-emits the crossing as a well-formed frame")
 
 def ingest_frame(root:Path, frame:dict[str,Any], *, mesh_root:Path|None=None,
                  hb_epoch:Any=None)->dict[str,Any]:
@@ -311,7 +340,8 @@ def ingest_frame(root:Path, frame:dict[str,Any], *, mesh_root:Path|None=None,
 
 __all__=["hb_reference","HB_EPOCH_NOT_SUPPLIED","HB_EPOCH_INVALID","SuppliedEpochRefused","writer_epoch_refusal","supplied_epoch",
          "HB_EPOCH_PROVENANCE_UNMARKED","CARRIED_PROVENANCE_UNVERIFIED",
-         "SUPPLIED_EPOCH_ENV","caller_epoch","epoch_now_ns","frame_epoch","consuming_epoch","derive_channel","carrier_frame","recover_packet","dispatch","persist_outbox","ingest_frame",
+         "SUPPLIED_EPOCH_ENV","caller_epoch","epoch_now_ns","frame_epoch","consuming_epoch","carried_refusal",
+         "FRAME_REFUSED_QUARANTINED","admit_frame","derive_channel","carrier_frame","recover_packet","dispatch","persist_outbox","ingest_frame",
          "capability_ingress","CAPABILITY_INGRESS_ROLE"]
 
 
@@ -385,10 +415,15 @@ def consume_addressed_frames(repo_root:Path, *, mesh_root:Path|None=None, seen:s
     registry=load_registry(repo_root)
     organization=registry["organization"]
     items=scan_addressed_frames(organization,root=mesh_root,seen=seen)
-    # Every frame's epoch is settled before the first is consumed.
-    epochs=[consuming_epoch(item["frame"],hb_epoch) for item in items]
+    # Every frame is admitted or refused before the first is consumed. A refused
+    # frame is reported, not consumed, and does not stop the frames after it.
+    admitted=[admit_frame(item["frame"],hb_epoch) for item in items]
     results=[]
-    for item,epoch in zip(items,epochs):
+    for item,(epoch,refusal) in zip(items,admitted):
+        if refusal is not None:
+            results.append({"path":item["path"],"result":{"status":"REFUSED","packet_id":item["frame"].get("packet_id"),
+                                                          "refusal":refusal}})
+            continue
         result=ingest_frame(repo_root,item["frame"],mesh_root=mesh_root,hb_epoch=epoch)
         results.append({"path":item["path"],"result":result})
     return results
@@ -611,10 +646,11 @@ def consume_and_respond(repo_root:Path, *, mesh_root:Path|None=None, seen:set[st
                         hb_epoch:Any=None)->list[dict[str,Any]]:
     """Consume addressed frames and publish each response at that frame's epoch.
 
-    A frame is consumed at the epoch it carries as supplied, else at the
-    caller's (``hb_epoch``, else ``STEGVERSE_HB_EPOCH``). Every frame's epoch is
-    settled before the first is consumed: one with neither is refused six-field,
-    so no receipt, response frame or seen marker is written from a clock.
+    Every frame is admitted at the epoch its heartbeat supplies (see
+    ``consuming_epoch``), or refused, before the first is consumed. A refused
+    frame (CLOCK, CARRIED, invalid) gets a six-field FRAME_REFUSED_QUARANTINED
+    seen marker and is terminal: it is never re-processed and never blocks a
+    later cycle. Nothing is stamped from a clock.
     """
     if caller_epoch(hb_epoch) is not None:
         hb_epoch=supplied_epoch(caller_epoch(hb_epoch),retry_entrypoint=CONSUME_EPOCH_RETRY_ENTRYPOINT)
@@ -624,8 +660,17 @@ def consume_and_respond(repo_root:Path, *, mesh_root:Path|None=None, seen:set[st
     effective_seen=set(seen or set())|durable_seen
     out=[]
     items=scan_addressed_frames(organization,root=mesh_root,seen=effective_seen)
-    epochs=[consuming_epoch(item["frame"],hb_epoch) for item in items]
-    for item,epoch in zip(items,epochs):
+    admitted=[admit_frame(item["frame"],hb_epoch) for item in items]
+    for item,(epoch,refusal) in zip(items,admitted):
+        if refusal is not None:
+            marker=quarantine_refused_frame(repo_root,item["path"],item["frame"],refusal)
+            out.append({"path":item["path"],
+                        "result":{"status":"REFUSED_QUARANTINED","packet_id":item["frame"].get("packet_id"),
+                                  "refusal":refusal},
+                        "response_publication":None,"seen_marker":str(marker)})
+    for item,(epoch,refusal) in zip(items,admitted):
+        if refusal is not None:
+            continue
         now_ns=epoch_now_ns(epoch)
         packet=recover_packet(item["frame"])
         payload=packet.get("payload") or {}
@@ -712,6 +757,41 @@ def federation_seen_frame_names(repo_root:Path)->set[str]:
         except Exception:
             continue
     return names
+
+def quarantine_refused_frame(repo_root:Path, frame_path:str, frame:dict[str,Any], refusal:dict[str,Any])->Path:
+    """The six-field seen marker that makes a refused frame terminal. No clock is read."""
+    seen_dir=repo_root/"resident-runtime/federation/seen.d"
+    seen_dir.mkdir(parents=True,exist_ok=True)
+    frame_name=Path(frame_path).name
+    marker={
+      "schema_version":"stegverse.federation-frame-consumption.v1",
+      "frame_name":frame_name,
+      "frame_sha256":frame.get("frame_sha256") if isinstance(frame,dict) else None,
+      "packet_id":frame.get("packet_id") if isinstance(frame,dict) else None,
+      "destination_org":frame.get("destination_org") if isinstance(frame,dict) else None,
+      "status":"REFUSED",
+      "disposition":"FAIL_CLOSED",
+      "failure_code":FRAME_REFUSED_QUARANTINED,
+      "failed_predicate":refusal.get("failed_predicate"),
+      "detail":str(refusal.get("failure_code"))+": "+str(refusal.get("detail")),
+      "refused_failure_code":refusal.get("failure_code"),
+      "required_evidence_or_repair":("the sender re-emits the crossing as a new frame whose heartbeat is supplied "
+                                     "(derived_from_clock false, no sampled_unix_ns, no unverified CARRIED claim); "
+                                     "this frame is terminal and is never re-processed"),
+      "retry_entrypoint":"the sending organization's emission of a new frame",
+      "owning_existing_goal":refusal.get("owning_existing_goal") or HB_EPOCH_OWNING_EXISTING_GOAL,
+      "next_attempt":"none for this frame; later cycles proceed past it",
+      "derived_from_clock":False,
+      "consequence_committed":False,
+      "authority_effect":"NONE_CARRIER_ONLY"
+    }
+    marker_path=seen_dir/(hashlib.sha256(frame_name.encode()).hexdigest()+".json")
+    if marker_path.exists():
+        if json.loads(marker_path.read_text())!=marker:
+            raise ValueError("federation_seen_marker_collision")
+    else:
+        marker_path.write_text(json.dumps(marker,indent=2,sort_keys=True)+"\n")
+    return marker_path
 
 def mark_federation_frame_seen(repo_root:Path, frame_path:str, frame:dict[str,Any], result:dict[str,Any])->Path:
     seen_dir=repo_root/"resident-runtime/federation/seen.d"

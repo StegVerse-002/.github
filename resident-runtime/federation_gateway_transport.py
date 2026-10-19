@@ -200,6 +200,24 @@ def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str
     if fetched.get("state") != "FRAME_AVAILABLE":
         raise FederationGatewayTransportError("unexpected gateway fetch state")
     frame = fetched["frame"]
+    # A refused frame (CLOCK, CARRIED, invalid) is acknowledged BLOCKED so the
+    # gateway never redelivers it: it is terminal and does not stop later cycles.
+    _, refusal = K.admit_frame(frame, hb_epoch)
+    if refusal is not None:
+        ack = acknowledge_frame(organization, frame, "BLOCKED", hb_epoch=hb_epoch)
+        return {
+            "schema_version": "stegverse.org-federation-gateway-cycle.v1",
+            "organization": organization,
+            "state": "REFUSED_QUARANTINED",
+            "packet_id": frame.get("packet_id"),
+            "frame_sha256": frame.get("frame_sha256"),
+            "failure_code": K.FRAME_REFUSED_QUARANTINED,
+            "refusal": refusal,
+            "frames_consumed": 0,
+            "responses_emitted": 0,
+            "ack_state": ack.get("state"),
+            "gateway_execution_authority": "NONE",
+        }
     packet = K.recover_packet(frame)
     result = K.ingest_frame(repo_root, frame, hb_epoch=hb_epoch)
     response_emitted = 0

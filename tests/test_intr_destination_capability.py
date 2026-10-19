@@ -335,12 +335,18 @@ class AddressedAndClosedTests(RedirectedLedgers):
     def test_a_peer_frame_without_a_supplied_epoch_is_refused_before_any_receipt(self):
         # Stamped at the clock: the frame carries no supplied epoch either.
         self.publish(diagnostic("unepoched-diagnostic"), ADDRESS, "unepoched-diagnostic", now_ns=None)
-        with mock.patch.dict(os.environ):
-            os.environ.pop("STEGVERSE_HB_EPOCH", None)
-            with self.assertRaises(ValueError) as refused:
-                self.consume()
-        self.assertEqual(refused.exception.refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
-        self.assertIs(refused.exception.refusal["derived_from_clock"], False)
+        # Refused whether or not the caller supplies an epoch: the frame's own
+        # heartbeat is a clock sample. The refusal is reported, not consumed.
+        for supplied in (None, "32"):
+            with mock.patch.dict(os.environ):
+                os.environ.pop("STEGVERSE_HB_EPOCH", None)
+                if supplied is not None:
+                    os.environ["STEGVERSE_HB_EPOCH"] = supplied
+                result, = self.consume()
+            self.assertEqual(result["result"]["status"], "REFUSED")
+            refusal = result["result"]["refusal"]
+            self.assertEqual(refusal["failure_code"], "HB_EPOCH_INVALID")
+            self.assertIs(refusal["derived_from_clock"], False)
         self.assertFalse(Path(os.environ["STEGVERSE_REPO_LEDGER_ROOT"]).exists())
         self.assertFalse(Path(os.environ["STEGVERSE_ORG_LEDGER_ROOT"]).exists())
 

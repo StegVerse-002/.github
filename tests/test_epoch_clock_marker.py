@@ -257,16 +257,22 @@ class ConsumingRoutes(unittest.TestCase):
 class ConsumeAndRespond(ConsumingRoutes):
     """Row 1: the response frame takes the supplied epoch, never ``publish_packet(None)``."""
 
-    def test_an_absent_epoch_is_refused_before_any_frame_is_consumed(self):
+    def test_a_clock_frame_is_refused_and_quarantined_even_with_a_caller_epoch(self):
         self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("absent-consume"), "absent-consume")
         reads = self.clock_reads()
-        with self.assertRaises(self.K.SuppliedEpochRefused) as refused:
-            self.K.consume_and_respond(self.root, mesh_root=self.mesh)
-        self.assertRefusal(refused.exception.refusal)
+        for caller in (None, str(SUPPLIED)):
+            with self.subTest(caller=caller):
+                results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=caller)
+                if caller is None:
+                    self.assertEqual([row["result"]["status"] for row in results], ["REFUSED_QUARANTINED"])
+                    self.assertEqual(results[0]["result"]["refusal"]["failure_code"], "HB_EPOCH_INVALID")
+                else:
+                    # The quarantine is terminal: the second cycle does not see the frame again.
+                    self.assertEqual(results, [])
         self.assertEqual(len(self.frames()), 1)
-        self.assertFalse((self.root / "resident-runtime/federation/seen.d").exists())
         self.assertNoLedger()
         self.assertEqual(self.clock_reads(), reads)
+        self.assertNoUnmarkedClock()
 
     def test_a_frame_at_a_supplied_epoch_is_answered_at_that_epoch(self):
         self.publish_inbound(THIS.lower() + ".org-control",
@@ -283,7 +289,8 @@ class ConsumeAndRespond(ConsumingRoutes):
         self.assertNoUnmarkedClock()
 
     def test_the_response_frame_and_receipts_carry_the_supplied_epoch(self):
-        self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("supplied-consume"), "supplied-consume")
+        self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("supplied-consume"), "supplied-consume",
+                             epoch=SUPPLIED)
         reads = self.clock_reads()
         results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=str(SUPPLIED))
         self.assertEqual(self.clock_reads(), reads)
@@ -320,7 +327,8 @@ class FederationCycle(ConsumingRoutes):
         self.assertEqual(self.clock_reads(), reads)
 
     def test_the_cycle_record_and_frames_carry_the_supplied_epoch(self):
-        self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("cycle-supplied"), "cycle-supplied")
+        self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("cycle-supplied"), "cycle-supplied",
+                             epoch=SUPPLIED)
         reads = self.clock_reads()
         with mock.patch.dict(os.environ, {"STEGVERSE_HB_EPOCH": str(SUPPLIED)}):
             completed, out = self.run_cycle()
@@ -343,7 +351,7 @@ class FederationCycle(ConsumingRoutes):
         frame = self.publish_inbound(THIS.lower() + ".org-control",
                                      {"message_class": "ecosystem.communication",
                                       "communication_id": "gateway-cycle", "subject": "s", "body": {}},
-                                     "gateway-cycle")
+                                     "gateway-cycle", epoch=SUPPLIED)
         submitted, acknowledged = [], []
         fetch = mock.patch.object(gateway, "fetch_frame",
                                   return_value={"state": "FRAME_AVAILABLE", "frame": frame})
@@ -366,6 +374,162 @@ class FederationCycle(ConsumingRoutes):
         for value in submitted + acknowledged:
             self.assertEqual(unmarked_clock_values(value), [])
 
+    def test_the_gateway_acknowledges_a_refused_frame_blocked_so_it_is_not_redelivered(self):
+        gateway = _load("marker_gateway_refused", self.root, "resident-runtime/federation_gateway_transport.py")
+        clock_frame = self.publish_inbound(THIS.lower() + ".org-control",
+                                           {"message_class": "ecosystem.communication",
+                                            "communication_id": "gateway-clock", "subject": "s", "body": {}},
+                                           "gateway-clock")
+        submitted, acknowledged = [], []
+        with mock.patch.object(gateway, "fetch_frame",
+                               return_value={"state": "FRAME_AVAILABLE", "frame": clock_frame}), \
+                mock.patch.object(gateway, "submit_frame",
+                                  side_effect=lambda value: submitted.append(value) or {"state": "STORED"}), \
+                mock.patch.object(gateway, "_json_request",
+                                  side_effect=lambda method, path, body=None, headers=None:
+                                  acknowledged.append(body) or {"state": "ACKNOWLEDGED"}):
+            reads = self.clock_reads()
+            result = gateway.resident_gateway_cycle(self.root, hb_epoch=str(SUPPLIED))
+        self.assertEqual(self.clock_reads(), reads)
+        self.assertEqual(result["state"], "REFUSED_QUARANTINED")
+        self.assertEqual(result["failure_code"], "FRAME_REFUSED_QUARANTINED")
+        self.assertEqual(submitted, [])
+        self.assertEqual([(value["state"], value["observed_at"]) for value in acknowledged],
+                         [("BLOCKED", f"hb-epoch:{SUPPLIED}")])
+        self.assertFalse((self.root / "resident-runtime/control").exists())
+        self.assertNoLedger()
+
+
+class RefusedFramesAreTerminal(ConsumingRoutes):
+    """B-P36j: a refused frame is quarantined once and never blocks a later cycle."""
+
+    def run_cycle(self):
+        out = self.work / "latest-cycle.json"
+        driver = (f"import sys, runpy; sys.argv={[str(self.root / 'resident-runtime/federation_cycle.py'), '--out', str(out)]!r}; "
+                  f"runpy.run_path(sys.argv[0], run_name='__main__')")
+        with mock.patch.dict(os.environ, {"STEGVERSE_HB_EPOCH": str(SUPPLIED)}):
+            completed = subprocess.run([sys.executable, "-c", driver], capture_output=True, text=True,
+                                       env=dict(os.environ), check=False)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("Traceback", completed.stderr)
+        return json.loads(out.read_text())
+
+    def seen_markers(self):
+        directory = self.root / "resident-runtime/federation/seen.d"
+        return [json.loads(path.read_text()) for path in sorted(directory.glob("*.json"))] if directory.is_dir() else []
+
+    def test_a_mixed_batch_consumes_the_valid_frame_and_quarantines_the_clock_frame_once(self):
+        self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("mixed-valid"), "mixed-valid",
+                             epoch=SUPPLIED)
+        self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("mixed-clock"), "mixed-clock")
+        reads = self.clock_reads()
+        first = self.run_cycle()
+        self.assertEqual((first["frames_seen"], first["frames_consumed"], first["frames_refused_quarantined"]),
+                         (2, 1, 1))
+        markers = self.seen_markers()
+        quarantined = [marker for marker in markers if marker["status"] == "REFUSED"]
+        self.assertEqual([marker["packet_id"] for marker in quarantined], ["mixed-clock"])
+        marker = quarantined[0]
+        self.assertRefusal(marker, "FRAME_REFUSED_QUARANTINED")
+        self.assertEqual(marker["refused_failure_code"], "HB_EPOCH_INVALID")
+        receipts = len(self.receipts())
+        # The second cycle proceeds: the quarantined frame is not retried, nothing new is written.
+        self.publish_inbound(THIS.lower() + ".intr-destination", diagnostic("later-valid"), "later-valid",
+                             epoch=SUPPLIED)
+        second = self.run_cycle()
+        self.assertEqual((second["frames_seen"], second["frames_consumed"], second["frames_refused_quarantined"]),
+                         (1, 1, 0))
+        self.assertEqual(len([m for m in self.seen_markers() if m["status"] == "REFUSED"]), 1)
+        self.assertGreater(len(self.receipts()), receipts)
+        self.assertEqual(self.clock_reads(), reads)
+        self.assertAllSupplied()
+        self.assertNoUnmarkedClock()
+
+    def test_an_invalid_frame_is_quarantined_too(self):
+        frame = self.publish_inbound(THIS.lower() + ".boundary-diagnostic", {"probe": "x"}, "invalid", epoch=SUPPLIED)
+        path = next((self.mesh / "frames.d").glob("*.json"))
+        path.write_text(json.dumps({**frame, "packet_base64": "not-base64!"}))
+        results = self.K.consume_and_respond(self.root, mesh_root=self.mesh)
+        self.assertEqual([row["result"]["status"] for row in results], ["REFUSED_QUARANTINED"])
+        self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh), [])
+
+
+class CarriedClaimsAreNeverStripped(ConsumingRoutes):
+    """B-P36k: a self-asserted CARRIED heartbeat is refused at ingest on every route; nothing is written."""
+
+    FORGED = "sha256:" + "f" * 64
+
+    def carried_frame(self, service, payload, packet_id):
+        packet = self.K.build_packet(
+            origin_org=PEER, origin_service="stegverse-org.org-control", destination_org=THIS,
+            destination_service=service, payload=payload,
+            transition_reference="probe:" + packet_id, authority_effect="NONE", packet_id=packet_id)
+        frame = self.K.carrier_frame(packet, now_ns=self.K.epoch_now_ns(SUPPLIED))
+        body = {key: value for key, value in frame.items() if key != "frame_sha256"}
+        body["heartbeat_reference"] = {**body["heartbeat_reference"], "source": "CARRIED:ORGANIZATION_LEDGER_HEAD",
+                                       "head_receipt_sha": self.FORGED}
+        frame = {**body, "frame_sha256": self.K.sha(body)}
+        self.K.publish_frame(frame, root=self.mesh)
+        return frame
+
+    def files(self):
+        return sorted(str(path) for path in self.work.rglob("*") if path.is_file()
+                      and self.root not in path.parents and "site" not in path.parts
+                      and path != self.clock_log and "frames.d" not in path.parts)
+
+    def test_a_forged_head_is_refused_on_every_route_with_nothing_written(self):
+        routes = (
+            (THIS.lower() + ".org-control", {"message_class": "ecosystem.work.request",
+                                             "communication_id": "forged-work", "subject": "s", "body": {}}),
+            (THIS.lower() + ".boundary-diagnostic", {"probe": "forged"}),
+            (THIS.lower() + ".intr-destination", diagnostic("forged-intr")),
+            (THIS.lower() + ".capability-discovery", {"operation": "LIST_CAPABILITIES"}),
+            (THIS.lower() + ".self-characterization", {"probe": "forged"}),
+        )
+        before = self.files()
+        reads = self.clock_reads()
+        for index, (service, payload) in enumerate(routes):
+            with self.subTest(service=service):
+                frame = self.carried_frame(service, payload, f"forged-{index}")
+                for caller in (None, SUPPLIED):
+                    with self.assertRaises(self.K.SuppliedEpochRefused) as refused:
+                        self.K.ingest_frame(self.root, frame, mesh_root=self.mesh, hb_epoch=caller)
+                    self.assertRefusal(refused.exception.refusal, "CARRIED_PROVENANCE_UNVERIFIED")
+        addressed = self.K.consume_addressed_frames(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertEqual({row["result"]["refusal"]["failure_code"] for row in addressed},
+                         {"CARRIED_PROVENANCE_UNVERIFIED"})
+        self.assertEqual(self.files(), before)
+        self.assertFalse((self.root / "resident-runtime/control").exists())
+        self.assertFalse((self.root / "resident-runtime/federation").exists())
+        self.assertFalse(self.self_char.exists())
+        self.assertNoLedger()
+        # The cycle writes only the B-P36j quarantine markers.
+        results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertEqual({row["result"]["status"] for row in results}, {"REFUSED_QUARANTINED"})
+        written = sorted(path.relative_to(self.root).parts[:3] for path in
+                         (self.root / "resident-runtime").rglob("*.json") if "seen.d" in path.parts)
+        self.assertEqual(len(written), len(routes))
+        self.assertFalse((self.root / "resident-runtime/control").exists())
+        self.assertNoLedger()
+        self.assertEqual(self.clock_reads(), reads)
+
+    def test_the_gateway_refuses_a_forged_head_without_ingesting(self):
+        gateway = _load("marker_gateway_forged", self.root, "resident-runtime/federation_gateway_transport.py")
+        frame = self.carried_frame(THIS.lower() + ".org-control",
+                                   {"message_class": "ecosystem.work.request", "communication_id": "g",
+                                    "subject": "s", "body": {}}, "forged-gateway")
+        acknowledged = []
+        with mock.patch.object(gateway, "fetch_frame", return_value={"state": "FRAME_AVAILABLE", "frame": frame}), \
+                mock.patch.object(gateway, "submit_frame", side_effect=AssertionError("nothing is submitted")), \
+                mock.patch.object(gateway, "_json_request",
+                                  side_effect=lambda method, path, body=None, headers=None:
+                                  acknowledged.append(body) or {"state": "ACKNOWLEDGED"}):
+            result = gateway.resident_gateway_cycle(self.root, hb_epoch=SUPPLIED)
+        self.assertEqual(result["refusal"]["failure_code"], "CARRIED_PROVENANCE_UNVERIFIED")
+        self.assertEqual([value["state"] for value in acknowledged], ["BLOCKED"])
+        self.assertFalse((self.root / "resident-runtime/control").exists())
+        self.assertNoLedger()
+
 
 class SelfCharacterizationReceipts(ConsumingRoutes):
     """Row 3: the five boundary receipts take the supplied epoch, or nothing is written."""
@@ -387,15 +551,16 @@ class SelfCharacterizationReceipts(ConsumingRoutes):
         frame = self.publish_inbound(THIS.lower() + ".self-characterization", {"probe": "self"}, "self-absent")
         reads = self.clock_reads()
         with self.assertRaises(self.K.SuppliedEpochRefused) as refused:
-            self.K.ingest_frame(self.root, frame, mesh_root=self.mesh)
-        self.assertRefusal(refused.exception.refusal)
+            self.K.ingest_frame(self.root, frame, mesh_root=self.mesh, hb_epoch=str(SUPPLIED))
+        self.assertRefusal(refused.exception.refusal, "HB_EPOCH_INVALID")
         self.assertFalse(self.self_char.exists())
         self.assertEqual(self.clock_reads(), reads)
 
     def test_the_live_receipts_carry_the_supplied_epoch(self):
-        frame = self.publish_inbound(THIS.lower() + ".self-characterization", {"probe": "self"}, "self-supplied")
+        frame = self.publish_inbound(THIS.lower() + ".self-characterization", {"probe": "self"}, "self-supplied",
+                                     epoch=SUPPLIED)
         reads = self.clock_reads()
-        result = self.K.ingest_frame(self.root, frame, mesh_root=self.mesh, hb_epoch=str(SUPPLIED))
+        result = self.K.ingest_frame(self.root, frame, mesh_root=self.mesh)
         self.assertEqual(self.clock_reads(), reads)
         self.assertEqual(result["status"], "CONSUMED")
         live = [json.loads(line) for line in
@@ -418,9 +583,10 @@ class IngestByRole(ConsumingRoutes):
             with self.subTest(service=service):
                 frame = self.publish_inbound(service, payload, "role-" + service)
                 reads = self.clock_reads()
-                with self.assertRaises(self.K.SuppliedEpochRefused) as refused:
-                    self.K.ingest_frame(self.root, frame, mesh_root=self.mesh)
-                self.assertRefusal(refused.exception.refusal)
+                for caller in (None, SUPPLIED):
+                    with self.assertRaises(self.K.SuppliedEpochRefused) as refused:
+                        self.K.ingest_frame(self.root, frame, mesh_root=self.mesh, hb_epoch=caller)
+                    self.assertRefusal(refused.exception.refusal, "HB_EPOCH_INVALID")
                 self.assertEqual(self.clock_reads(), reads)
         self.assertNoLedger()
         self.assertFalse((self.root / "resident-runtime/control").exists())
@@ -440,7 +606,7 @@ class IngestByRole(ConsumingRoutes):
         self.assertNoLedger()
         self.assertFalse((self.root / "resident-runtime/control").exists())
 
-    def test_roles_that_stamp_time_refuse_an_absent_epoch_and_take_a_supplied_one(self):
+    def test_roles_that_stamp_time_refuse_a_clock_frame_and_take_a_supplied_one(self):
         for service, payload in (
                 (THIS.lower() + ".org-control", {"message_class": "ecosystem.monitor.request",
                                                  "communication_id": "role-monitor", "subject": "s", "body": {}}),
@@ -450,9 +616,10 @@ class IngestByRole(ConsumingRoutes):
                 frame = self.publish_inbound(service, payload, "stamped-" + service)
                 reads = self.clock_reads()
                 with self.assertRaises(ValueError) as refused:
-                    self.K.ingest_frame(self.root, frame, mesh_root=self.mesh)
-                self.assertRefusal(refused.exception.refusal)
-                result = self.K.ingest_frame(self.root, frame, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+                    self.K.ingest_frame(self.root, frame, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+                self.assertRefusal(refused.exception.refusal, "HB_EPOCH_INVALID")
+                frame = self.publish_inbound(service, payload, "supplied-" + service, epoch=SUPPLIED)
+                result = self.K.ingest_frame(self.root, frame, mesh_root=self.mesh)
                 self.assertEqual(result["status"], "CONSUMED")
                 self.assertEqual(self.clock_reads(), reads)
                 self.assertEqual(unmarked_clock_values(result), [])
@@ -583,9 +750,8 @@ class ClockMarkerSweep(ConsumingRoutes):
             (THIS.lower() + ".capability-discovery", {"operation": "LIST_CAPABILITIES"}),
         ]
         for index, (service, payload) in enumerate(inbound):
-            self.publish_inbound(service, payload, f"sweep-{index}")
-        self.publish_inbound(THIS.lower() + ".boundary-diagnostic", {"probe": "carried"}, "sweep-carried",
-                             epoch=SUPPLIED)
+            self.publish_inbound(service, payload, f"sweep-{index}", epoch=SUPPLIED)
+            self.publish_inbound(service, payload, f"sweep-clock-{index}")
         reads = self.clock_reads()
         self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
         egress = _load("marker_egress", self.root, "resident-runtime/organization_egress_boundary.py")

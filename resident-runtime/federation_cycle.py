@@ -31,6 +31,7 @@ def cycle(hb_epoch:int, *, gateway:bool)->dict:
         return receipt
     results=K.consume_and_respond(ROOT,hb_epoch=hb_epoch)
     consumed=sum(1 for x in results if (x.get("result") or {}).get("status")=="CONSUMED")
+    refused=sum(1 for x in results if (x.get("result") or {}).get("status")=="REFUSED_QUARANTINED")
     responses=sum(1 for x in results if x.get("response_publication"))
     return {
       "schema_version":"stegverse.org-federation-cycle.v1",
@@ -38,6 +39,7 @@ def cycle(hb_epoch:int, *, gateway:bool)->dict:
       "heartbeat_reference":heartbeat(hb_epoch),
       "frames_seen":len(results),
       "frames_consumed":consumed,
+      "frames_refused_quarantined":refused,
       "responses_emitted":responses,
       "authority_effect":"NONE_CARRIER_ONLY",
       "transport":"LOCAL_SPOOL_FALLBACK"
