@@ -388,10 +388,13 @@ class AddressedAndClosedTests(RedirectedLedgers):
 
     def test_a_manifest_addressed_to_this_capability_is_not_a_diagnostic(self):
         self.publish({"manifest": {"probe": True}}, ADDRESS, "not-a-diagnostic")
-        with mock.patch.dict(os.environ, {"STEGVERSE_HB_EPOCH": "32"}), \
-                self.assertRaises(ValueError) as refused:
-            self.consume()
-        self.assertIn("SUBMISSION_DECLARES_A_RESPONDED_REQUEST_CLASS", str(refused.exception))
+        # The refusal is that frame's (B-P36o), reported rather than raised.
+        with mock.patch.dict(os.environ, {"STEGVERSE_HB_EPOCH": "32"}):
+            result, = self.consume()
+        self.assertEqual(result["result"]["status"], "REFUSED")
+        refusal = result["result"]["refusal"]
+        self.assertEqual(refusal["failure_code"], "FRAME_INGEST_FAILED")
+        self.assertIn("SUBMISSION_DECLARES_A_RESPONDED_REQUEST_CLASS", refusal["detail"])
         self.assertEqual(self.receipts(
             "STEGVERSE_REPO_LEDGER_ROOT", "stegverse.repo-transition-receipt/v1", OPERATION_ID), [])
 

@@ -758,6 +758,72 @@ class MalformedClockFrames(ConsumingRoutes):
         self.assertNoLedger()
 
 
+class OneBadFrameNeverStopsTheCycle(ConsumingRoutes):
+    """B-P36o: any error ingesting one frame is that frame's six-field refusal and quarantine."""
+
+    def write_first(self, name, frame):
+        # "0-" sorts before every hex frame name, so these are offered before the valid one.
+        directory = self.mesh / "frames.d"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / ("0-" + name + ".json")).write_text(json.dumps(frame))
+
+    def reframed(self, frame, **heartbeat):
+        body = {key: value for key, value in frame.items() if key != "frame_sha256"}
+        body["heartbeat_reference"] = {**body["heartbeat_reference"], **heartbeat}
+        return {**body, "frame_sha256": self.K.sha(body)}
+
+    def supplied_frame(self, service, payload, packet_id):
+        packet = self.K.build_packet(origin_org=PEER, origin_service="stegverse-org.org-control",
+                                     destination_org=THIS, destination_service=service, payload=payload,
+                                     packet_id=packet_id)
+        return self.K.carrier_frame(packet, now_ns=self.K.epoch_now_ns(SUPPLIED))
+
+    maxDiff = None
+
+    def test_a_mixed_batch_quarantines_each_bad_frame_and_ledgers_the_valid_one(self):
+        intr = THIS.lower() + ".intr-destination"
+        base = self.supplied_frame(intr, diagnostic("bad-generation"), "bad-generation")
+        self.write_first("a-generation", self.reframed(base, generation=SUPPLIED + 1))
+        base = self.supplied_frame(intr, diagnostic("bad-id"), "bad-id")
+        self.write_first("b-heartbeat-id", self.reframed(base, heartbeat_id="HB:1"))
+        base = self.supplied_frame(intr, diagnostic("bad-frame-sha"), "bad-frame-sha")
+        self.write_first("c-frame-sha", {**base, "frame_sha256": "sha256:" + "0" * 64})
+        base = self.supplied_frame(intr, diagnostic("bad-packet-sha"), "bad-packet-sha")
+        body = {key: value for key, value in base.items() if key != "frame_sha256"}
+        body["packet_sha256"] = "sha256:" + "1" * 64
+        self.write_first("d-packet-sha", {**body, "frame_sha256": self.K.sha(body)})
+        self.write_first("e-adapter", self.supplied_frame(intr, {"manifest": {"probe": True}}, "bad-adapter"))
+        self.write_first("f-epoch", self.reframed(self.supplied_frame(intr, diagnostic("bad-epoch"), "bad-epoch"),
+                                                  epoch="abc"))
+        self.publish_inbound(intr, diagnostic("good"), "good", epoch=SUPPLIED)
+        reads = self.clock_reads()
+        results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        codes = {row["result"].get("packet_id") or row["result"]["packet"]["packet_id"]: (row["result"]["status"],
+                                                  (row["result"].get("refusal") or {}).get("failure_code"))
+                 for row in results}
+        self.assertEqual(codes, {
+            "bad-generation": ("REFUSED_QUARANTINED", "HB_REFERENCE_INVALID"),
+            "bad-id": ("REFUSED_QUARANTINED", "HB_REFERENCE_INVALID"),
+            "bad-frame-sha": ("REFUSED_QUARANTINED", "FRAME_INTEGRITY_INVALID"),
+            "bad-packet-sha": ("REFUSED_QUARANTINED", "FRAME_INTEGRITY_INVALID"),
+            "bad-adapter": ("REFUSED_QUARANTINED", "FRAME_INGEST_FAILED"),
+            "bad-epoch": ("REFUSED_QUARANTINED", "HB_EPOCH_INVALID"),
+            "good": ("CONSUMED", None),
+        })
+        adapter = next(row for row in results if row["result"].get("packet_id") == "bad-adapter")
+        self.assertEqual(adapter["result"]["refusal"]["failed_predicate"], "ValueError")
+        for row in results:
+            if row["result"]["status"] == "REFUSED_QUARANTINED":
+                self.assertRefusal(row["result"]["refusal"], row["result"]["refusal"]["failure_code"])
+        # Only the valid frame is ledgered, all at 4096, with no clock read.
+        repository = [r for r in self.receipts() if r["schema"] == "stegverse.repo-transition-receipt/v1"]
+        self.assertEqual({r["evidence"]["communication_id"] for r in repository}, {"good"})
+        self.assertEqual(self.clock_reads(), reads)
+        self.assertAllSupplied()
+        # A second cycle offers none of the bad frames again.
+        self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
+
+
 class SeededLegacySource(ConsumingRoutes):
     """O-1 ordering: a frame never leaves when its receipt pair would be refused."""
 

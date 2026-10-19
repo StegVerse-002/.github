@@ -101,6 +101,49 @@ def source_of(reference):
     return (ROOT / reference.split("::", 1)[0]).read_text(encoding="utf-8")
 
 
+#: Manifest-declared entrypoints with no in-tree dispatcher or caller, recorded
+#: six-field as MANIFEST_DISPATCHER_NOT_IN_TREE and open for a ruling. Pinned so
+#: a new gap fails here.
+NOT_IN_TREE = {
+    # An operator CLI: nothing in the tree invokes it.
+    "resident-runtime/ecosystem_control.py",
+    # The principal launcher lives in StegVerse-002/micro-node-runtime, not here.
+    "tools/run_self_characterization_principal.py",
+}
+
+
+def tree_files():
+    for path in ROOT.rglob("*"):
+        if (path.is_file() and ".git" not in path.parts and "__pycache__" not in path.parts
+                and "tests" not in path.relative_to(ROOT).parts[:1]
+                and path.suffix in {".py", ".yml", ".yaml", ".service", ".sh"}):
+            yield path
+
+
+def in_tree_callers(path, documents):
+    """In-tree files that invoke ``path``, including through the service registry's endpoint adapters."""
+    callers = [str(other.relative_to(ROOT)) for other in tree_files()
+               if str(other.relative_to(ROOT)) != path and Path(path).name in other.read_text(errors="ignore")]
+    adapters = {service.get("endpoint_adapter") for service in documents["org-boundary/registry/services.json"]["services"]}
+    if path in adapters:
+        # process_boundary.py runs ROOT/<endpoint_adapter> for its service.
+        callers.append("org-boundary/runtime/process_boundary.py::endpoint_result")
+    return callers
+
+
+class ManifestDispatchersInTree(unittest.TestCase):
+    def setUp(self):
+        self.documents = {name: load(name) for name in MANIFESTS}
+
+    def test_every_declared_entrypoint_has_an_in_tree_caller_or_is_a_recorded_gap(self):
+        declared = set()
+        for document in self.documents.values():
+            declared |= {match.group(1) for text in strings(document) if (match := PY_PATH.match(text))}
+        gaps = {path for path in declared
+                if not (ROOT / path).is_file() or not in_tree_callers(path, self.documents)}
+        self.assertEqual(gaps, NOT_IN_TREE)
+
+
 class ManifestEpochBindings(unittest.TestCase):
     def setUp(self):
         self.documents = {name: load(name) for name in MANIFESTS}

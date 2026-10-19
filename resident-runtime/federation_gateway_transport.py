@@ -218,7 +218,25 @@ def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str
             "gateway_execution_authority": "NONE",
         }
     packet = K.recover_packet(frame)
-    result = K.ingest_frame(repo_root, frame, hb_epoch=frame_epoch)
+    try:
+        result = K.ingest_frame(repo_root, frame, hb_epoch=frame_epoch)
+    except Exception as error:
+        # B-P36o: the frame's failure is its refusal; it is acknowledged BLOCKED, not redelivered.
+        refusal = K.frame_failure_refusal(error)
+        ack = acknowledge_frame(organization, frame, "BLOCKED", hb_epoch=hb_epoch)
+        return {
+            "schema_version": "stegverse.org-federation-gateway-cycle.v1",
+            "organization": organization,
+            "state": "REFUSED_QUARANTINED",
+            "packet_id": frame.get("packet_id"),
+            "frame_sha256": frame.get("frame_sha256"),
+            "failure_code": K.FRAME_REFUSED_QUARANTINED,
+            "refusal": refusal,
+            "frames_consumed": 0,
+            "responses_emitted": 0,
+            "ack_state": ack.get("state"),
+            "gateway_execution_authority": "NONE",
+        }
     response_emitted = 0
     response_ref = None
     if result.get("status") == "CONSUMED":

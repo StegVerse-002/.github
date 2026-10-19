@@ -354,6 +354,7 @@ def consuming_epoch(frame:dict[str,Any], hb_epoch:Any=None, *, explicit:bool=Tru
         raise SuppliedEpochRefused(carried_refusal(reference,INGEST_EPOCH_RETRY_ENTRYPOINT))
     failure=supplied_epoch_failure(reference.get("epoch") if isinstance(reference,dict) else None,reference)
     if failure is None:
+        _check_reference_identity(reference)
         carried=int(reference["epoch"])
         if stated is not None and stated!=carried:
             raise SuppliedEpochRefused(_epoch_refusal(
@@ -368,8 +369,45 @@ def consuming_epoch(frame:dict[str,Any], hb_epoch:Any=None, *, explicit:bool=Tru
         if malformed is not None:
             raise SuppliedEpochRefused(_epoch_refusal(malformed[0],"the CLOCK frame's own epoch is malformed: "
                                                       +malformed[1],INGEST_EPOCH_RETRY_ENTRYPOINT))
+        _check_reference_identity(reference)
         return caller()
     raise SuppliedEpochRefused(_epoch_refusal(failure[0],failure[1],INGEST_EPOCH_RETRY_ENTRYPOINT))
+
+HB_REFERENCE_INVALID="HB_REFERENCE_INVALID"
+FRAME_INTEGRITY_INVALID="FRAME_INTEGRITY_INVALID"
+FRAME_INGEST_FAILED="FRAME_INGEST_FAILED"
+
+def _check_reference_identity(reference:dict[str,Any])->None:
+    """A heartbeat whose generation or id names another epoch than its own is HB_REFERENCE_INVALID."""
+    epoch=int(reference["epoch"])
+    if "generation" in reference and reference["generation"]!=epoch:
+        raise SuppliedEpochRefused(_epoch_refusal(
+            HB_REFERENCE_INVALID,"heartbeat generation "+repr(reference["generation"])+" is not its epoch "+str(epoch),
+            INGEST_EPOCH_RETRY_ENTRYPOINT,repair="the sender re-emits the crossing with a consistent heartbeat"))
+    if "heartbeat_id" in reference and reference["heartbeat_id"]!="HB:"+str(epoch):
+        raise SuppliedEpochRefused(_epoch_refusal(
+            HB_REFERENCE_INVALID,"heartbeat id "+repr(reference["heartbeat_id"])+" is not HB:"+str(epoch),
+            INGEST_EPOCH_RETRY_ENTRYPOINT,repair="the sender re-emits the crossing with a consistent heartbeat"))
+
+def frame_failure_refusal(error:BaseException)->dict[str,Any]:
+    """The six-field refusal for an error raised while ingesting one frame (B-P36o). Nothing is written.
+
+    A carrier or packet hash, or a packet binding that does not match its
+    frame, is FRAME_INTEGRITY_INVALID. Any other error is FRAME_INGEST_FAILED,
+    with the exception class as the failed predicate.
+    """
+    if isinstance(error,SuppliedEpochRefused):
+        return dict(error.refusal)
+    detail=str(error)
+    if isinstance(error,ValueError) and detail.endswith("_mismatch"):
+        refusal=_epoch_refusal(FRAME_INTEGRITY_INVALID,"the frame does not recover its packet: "+detail,
+                               INGEST_EPOCH_RETRY_ENTRYPOINT,repair="the sender re-emits the crossing as an intact frame")
+        refusal["failed_predicate"]="FRAME_RECOVERS_ITS_PACKET"
+        return refusal
+    refusal=_epoch_refusal(FRAME_INGEST_FAILED,type(error).__name__+": "+detail,INGEST_EPOCH_RETRY_ENTRYPOINT,
+                           repair="the sender re-emits the crossing as a frame this boundary can ingest")
+    refusal["failed_predicate"]=type(error).__name__
+    return refusal
 
 def _clock_frame_refusal()->dict[str,Any]:
     return _epoch_refusal(HB_EPOCH_NOT_SUPPLIED,
@@ -406,12 +444,8 @@ def admit_frame(frame:dict[str,Any], hb_epoch:Any=None, *,
             if service is not None and stamps_time(service,packet):
                 return None,_clock_frame_refusal()
         return epoch,None
-    except SuppliedEpochRefused as refused:
-        return None,refused.refusal
-    except (ValueError,KeyError,TypeError) as invalid:
-        return None,_epoch_refusal("FRAME_INVALID","the frame does not recover its packet: "+str(invalid),
-                                   INGEST_EPOCH_RETRY_ENTRYPOINT,
-                                   repair="the sender re-emits the crossing as a well-formed frame")
+    except Exception as error:
+        return None,frame_failure_refusal(error)
 
 def ingest_frame(root:Path, frame:dict[str,Any], *, mesh_root:Path|None=None,
                  hb_epoch:Any=None)->dict[str,Any]:
@@ -437,7 +471,8 @@ __all__=["hb_reference","HB_EPOCH_NOT_SUPPLIED","HB_EPOCH_INVALID","SuppliedEpoc
          "HB_EPOCH_PROVENANCE_UNMARKED","CARRIED_PROVENANCE_UNVERIFIED","HB_EPOCH_CONFLICT",
          "SHARED_VALIDATOR_SHA256","supplied_epoch_failure","stamps_time",
          "SUPPLIED_EPOCH_ENV","caller_epoch","epoch_now_ns","frame_epoch","consuming_epoch","carried_refusal",
-         "FRAME_REFUSED_QUARANTINED","admit_frame","derive_channel","carrier_frame","recover_packet","dispatch","persist_outbox","ingest_frame",
+         "FRAME_REFUSED_QUARANTINED","admit_frame","frame_failure_refusal",
+         "HB_REFERENCE_INVALID","FRAME_INTEGRITY_INVALID","FRAME_INGEST_FAILED","derive_channel","carrier_frame","recover_packet","dispatch","persist_outbox","ingest_frame",
          "capability_ingress","CAPABILITY_INGRESS_ROLE"]
 
 
@@ -520,7 +555,12 @@ def consume_addressed_frames(repo_root:Path, *, mesh_root:Path|None=None, seen:s
             results.append({"path":item["path"],"result":{"status":"REFUSED","packet_id":item["frame"].get("packet_id"),
                                                           "refusal":refusal}})
             continue
-        result=ingest_frame(repo_root,item["frame"],mesh_root=mesh_root,hb_epoch=epoch)
+        try:
+            result=ingest_frame(repo_root,item["frame"],mesh_root=mesh_root,hb_epoch=epoch)
+        except Exception as error:
+            # B-P36o: one frame's failure is that frame's refusal; the next frame proceeds.
+            result={"status":"REFUSED","packet_id":item["frame"].get("packet_id"),
+                    "refusal":frame_failure_refusal(error)}
         results.append({"path":item["path"],"result":result})
     return results
 
@@ -764,9 +804,7 @@ def consume_and_respond(repo_root:Path, *, mesh_root:Path|None=None, seen:set[st
                         "result":{"status":"REFUSED_QUARANTINED","packet_id":item["frame"].get("packet_id"),
                                   "refusal":refusal},
                         "response_publication":None,"seen_marker":str(marker)})
-    for item,(epoch,refusal) in zip(items,admitted):
-        if refusal is not None:
-            continue
+    def respond(item:dict[str,Any], epoch:int|None)->dict[str,Any]:
         packet=recover_packet(item["frame"])
         payload=packet.get("payload") or {}
         message_class=payload.get("message_class")
@@ -780,9 +818,8 @@ def consume_and_respond(repo_root:Path, *, mesh_root:Path|None=None, seen:set[st
                     "ecosystem.monitor.request","ecosystem.work.request","ecosystem.communication"}:
                 response_refusal=HB_EPOCH_NOT_SUPPLIED
             marker=mark_federation_frame_seen(repo_root,item["path"],item["frame"],result)
-            out.append({"path":item["path"],"result":result,"response_publication":None,
-                        "response_refused":response_refusal,"seen_marker":str(marker)})
-            continue
+            return {"path":item["path"],"result":result,"response_publication":None,
+                    "response_refused":response_refusal,"seen_marker":str(marker)}
         now_ns=epoch_now_ns(epoch)
         if result.get("status")=="CONSUMED" and message_class in {
             "ecosystem.monitor.request","ecosystem.work.request","ecosystem.communication"}:
@@ -794,7 +831,22 @@ def consume_and_respond(repo_root:Path, *, mesh_root:Path|None=None, seen:set[st
                 response=build_endpoint_response(packet,result["execution_result"])
                 response_publication=publish_packet(response,root=mesh_root,now_ns=now_ns)
         marker=mark_federation_frame_seen(repo_root,item["path"],item["frame"],result)
-        out.append({"path":item["path"],"result":result,"response_publication":response_publication,"seen_marker":str(marker)})
+        return {"path":item["path"],"result":result,"response_publication":response_publication,"seen_marker":str(marker)}
+
+    for item,(epoch,refusal) in zip(items,admitted):
+        if refusal is not None:
+            continue
+        try:
+            out.append(respond(item,epoch))
+        except Exception as error:
+            # B-P36o: an error ingesting one frame is that frame's six-field refusal and a
+            # terminal quarantine. The cycle continues to the next frame.
+            refusal=frame_failure_refusal(error)
+            marker=quarantine_refused_frame(repo_root,item["path"],item["frame"],refusal)
+            out.append({"path":item["path"],
+                        "result":{"status":"REFUSED_QUARANTINED","packet_id":item["frame"].get("packet_id"),
+                                  "refusal":refusal},
+                        "response_publication":None,"seen_marker":str(marker)})
     return out
 
 def collect_ecosystem_responses(origin_org:str, communication_id:str, *, mesh_root:Path|None=None)->dict[str,Any]:
