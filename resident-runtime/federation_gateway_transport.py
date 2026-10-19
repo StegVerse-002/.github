@@ -184,7 +184,6 @@ def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str
     so no response frame or acknowledgement is stamped from a clock.
     """
     hb_epoch = K.supplied_epoch(K.caller_epoch(hb_epoch), retry_entrypoint=CYCLE_EPOCH_RETRY_ENTRYPOINT)
-    now_ns = K.epoch_now_ns(hb_epoch)
     registry = K.load_registry(repo_root)
     organization = registry["organization"]
     fetched = fetch_frame(organization)
@@ -202,7 +201,7 @@ def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str
     frame = fetched["frame"]
     # A refused frame (CLOCK, CARRIED, invalid) is acknowledged BLOCKED so the
     # gateway never redelivers it: it is terminal and does not stop later cycles.
-    _, refusal = K.admit_frame(frame, hb_epoch)
+    frame_epoch, refusal = K.admit_frame(frame, hb_epoch, root=repo_root)
     if refusal is not None:
         ack = acknowledge_frame(organization, frame, "BLOCKED", hb_epoch=hb_epoch)
         return {
@@ -224,8 +223,14 @@ def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str
     response_ref = None
     if result.get("status") == "CONSUMED":
         execution = result["execution_result"]
+        # A response is stamped at the frame's epoch. A CLOCK frame is consumed
+        # but lends none, so it is answered with no response frame.
+        now_ns = None if frame_epoch is None else K.epoch_now_ns(frame_epoch)
         message_class = (packet.get("payload") or {}).get("message_class")
-        if message_class in {"ecosystem.monitor.request", "ecosystem.work.request", "ecosystem.communication"}:
+        if now_ns is None and message_class in {"ecosystem.monitor.request", "ecosystem.work.request",
+                                                "ecosystem.communication"}:
+            pass
+        elif message_class in {"ecosystem.monitor.request", "ecosystem.work.request", "ecosystem.communication"}:
             response = K.build_control_response(packet, execution)
             response_frame = K.carrier_frame(response, now_ns=now_ns)
             submit_frame(response_frame)
@@ -235,7 +240,8 @@ def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str
             _persist_response(repo_root, packet, execution)
         elif not (packet.get("payload") or {}).get("response_to_packet_id"):
             service = next((svc for svc in registry["services"] if svc.get("service_id") == packet["destination"]["service"]), None)
-            if service and service.get("endpoint_adapter"):
+            # An endpoint-adapter service stamps time, so a CLOCK frame never reaches it.
+            if service and service.get("endpoint_adapter") and now_ns is not None:
                 response = K.build_endpoint_response(packet, execution)
                 response_frame = K.carrier_frame(response, now_ns=now_ns)
                 submit_frame(response_frame)

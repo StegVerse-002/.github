@@ -336,7 +336,8 @@ class AddressedAndClosedTests(RedirectedLedgers):
         # Stamped at the clock: the frame carries no supplied epoch either.
         self.publish(diagnostic("unepoched-diagnostic"), ADDRESS, "unepoched-diagnostic", now_ns=None)
         # Refused whether or not the caller supplies an epoch: the frame's own
-        # heartbeat is a clock sample. The refusal is reported, not consumed.
+        # heartbeat is CLOCK and lends none, and this route needs one. The
+        # refusal is reported, not consumed.
         for supplied in (None, "32"):
             with mock.patch.dict(os.environ):
                 os.environ.pop("STEGVERSE_HB_EPOCH", None)
@@ -345,7 +346,7 @@ class AddressedAndClosedTests(RedirectedLedgers):
                 result, = self.consume()
             self.assertEqual(result["result"]["status"], "REFUSED")
             refusal = result["result"]["refusal"]
-            self.assertEqual(refusal["failure_code"], "HB_EPOCH_INVALID")
+            self.assertEqual(refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
             self.assertIs(refusal["derived_from_clock"], False)
         self.assertFalse(Path(os.environ["STEGVERSE_REPO_LEDGER_ROOT"]).exists())
         self.assertFalse(Path(os.environ["STEGVERSE_ORG_LEDGER_ROOT"]).exists())
