@@ -730,6 +730,34 @@ class ExplicitEpochAgainstTheFrame(ConsumingRoutes):
         self.assertEqual(self.K.consuming_epoch(agreeing, 39, explicit=False), SUPPLIED)
 
 
+class MalformedClockFrames(ConsumingRoutes):
+    """F-S1a: a CLOCK frame whose own epoch is malformed is quarantined, never consumed or raised."""
+
+    def malformed_clock_frame(self, service, payload, packet_id, epoch):
+        packet = self.K.build_packet(origin_org=PEER, origin_service="stegverse-org.org-control",
+                                     destination_org=THIS, destination_service=service, payload=payload,
+                                     packet_id=packet_id)
+        frame = self.K.carrier_frame(packet, now_ns=self.K.epoch_now_ns(SUPPLIED))
+        body = {key: value for key, value in frame.items() if key != "frame_sha256"}
+        body["heartbeat_reference"] = {**body["heartbeat_reference"], "epoch": epoch, "derived_from_clock": True}
+        frame = {**body, "frame_sha256": self.K.sha(body)}
+        self.K.publish_frame(frame, root=self.mesh)
+        return frame
+
+    def test_a_malformed_clock_frame_is_quarantined_by_the_cycle(self):
+        for index, epoch in enumerate(("abc", 7, None, [4096])):
+            self.malformed_clock_frame(THIS.lower() + ".boundary-diagnostic", {"probe": index},
+                                       f"malformed-{index}", epoch)
+        reads = self.clock_reads()
+        results = self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED)
+        self.assertEqual([row["result"]["status"] for row in results], ["REFUSED_QUARANTINED"] * 4)
+        self.assertEqual({row["result"]["refusal"]["failure_code"] for row in results},
+                         {"HB_EPOCH_INVALID", "HB_EPOCH_NOT_SUPPLIED"})
+        self.assertEqual(self.K.consume_and_respond(self.root, mesh_root=self.mesh, hb_epoch=SUPPLIED), [])
+        self.assertEqual(self.clock_reads(), reads)
+        self.assertNoLedger()
+
+
 class SeededLegacySource(ConsumingRoutes):
     """O-1 ordering: a frame never leaves when its receipt pair would be refused."""
 

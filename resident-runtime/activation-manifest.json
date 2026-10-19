@@ -47,5 +47,43 @@
     "restart_policy": "ALWAYS",
     "service_template": "resident-runtime/systemd/stegverse-002-resident.service",
     "github_actions_runtime_authority": "NONE"
+  },
+  "hb_epoch_bindings": {
+    "resident-runtime/resident_executor.py": {
+      "requires_hb_epoch": true,
+      "reason": "runs resident-runtime/federation_cycle.py each cycle",
+      "from": "environment",
+      "variable": "STEGVERSE_HB_EPOCH",
+      "supplied_by": "resident-runtime/systemd/stegverse-002-resident.service",
+      "supplied_via": "EnvironmentFile=/etc/stegverse/resident.env",
+      "forwarded_by": "resident-runtime/resident_executor.py::run_json",
+      "absent": "federation_cycle.py refuses six-field HB_EPOCH_NOT_SUPPLIED and writes nothing; never a clock"
+    },
+    "resident-runtime/federation_cycle.py": {
+      "requires_hb_epoch": true,
+      "from": "environment",
+      "variable": "STEGVERSE_HB_EPOCH",
+      "argument": "--hb-epoch",
+      "supplied_by": "resident-runtime/resident_executor.py::run_json"
+    },
+    "resident-runtime/federation_gateway_transport.py": {
+      "requires_hb_epoch": true,
+      "from": "argument",
+      "argument": "hb_epoch=",
+      "supplied_by": "resident-runtime/federation_cycle.py::cycle"
+    },
+    "org-boundary/runtime/process_boundary.py": {
+      "requires_hb_epoch": true,
+      "from": "argument",
+      "argument": "--hb-epoch",
+      "supplied_by": "org-kernel/kernel.py::dispatch"
+    },
+    "org-kernel/kernel.py": {
+      "requires_hb_epoch": true,
+      "from": "frame_heartbeat",
+      "rule": "org-kernel/kernel.py::consuming_epoch",
+      "supplied_by": "org-kernel/kernel.py::ingest_frame",
+      "fallback": "the caller's hb_epoch= (a cycle's epoch) for a frame that lends none"
+    }
   }
 }

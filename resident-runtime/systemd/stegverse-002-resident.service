@@ -9,7 +9,9 @@ WorkingDirectory=/var/lib/stegverse/source/StegVerse-002/.github
 ExecStart=/usr/bin/python3 /var/lib/stegverse/source/StegVerse-002/.github/resident-runtime/resident_executor.py --poll-seconds 1
 Restart=always
 RestartSec=1
-EnvironmentFile=-/etc/stegverse/resident.env
+# The resident cycle's supplied epoch (STEGVERSE_HB_EPOCH) is bound here; see
+# activation-manifest.json hb_epoch_bindings. The file is required.
+EnvironmentFile=/etc/stegverse/resident.env
 
 [Install]
 WantedBy=multi-user.target

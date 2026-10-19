@@ -362,6 +362,12 @@ def consuming_epoch(frame:dict[str,Any], hb_epoch:Any=None, *, explicit:bool=Tru
                 repair="supply no epoch, or the frame's own; two supplied epochs that differ are never reconciled"))
         return carried
     if _clock_flagged(reference):
+        # F-S1a: a CLOCK frame whose own epoch is malformed is refused (and so
+        # quarantined by a cycle), not consumed.
+        malformed=supplied_epoch_failure(reference.get("epoch"))
+        if malformed is not None:
+            raise SuppliedEpochRefused(_epoch_refusal(malformed[0],"the CLOCK frame's own epoch is malformed: "
+                                                      +malformed[1],INGEST_EPOCH_RETRY_ENTRYPOINT))
         return caller()
     raise SuppliedEpochRefused(_epoch_refusal(failure[0],failure[1],INGEST_EPOCH_RETRY_ENTRYPOINT))
 

@@ -16,6 +16,9 @@ on:
       - 'tests/test_intr_destination_capability.py'
       - 'tests/test_ledger_writer_supplied_epoch.py'
       - 'tests/test_epoch_clock_marker.py'
+      - 'tests/test_manifest_epoch_bindings.py'
+      - 'resident-runtime/activation-manifest.json'
+      - 'resident-runtime/systemd/stegverse-002-resident.service'
       - 'org-boundary/runtime/process_boundary.py'
       - 'resident-runtime/federation_cycle.py'
       - 'resident-runtime/federation_gateway_transport.py'
@@ -36,6 +39,9 @@ on:
       - 'tests/test_intr_destination_capability.py'
       - 'tests/test_ledger_writer_supplied_epoch.py'
       - 'tests/test_epoch_clock_marker.py'
+      - 'tests/test_manifest_epoch_bindings.py'
+      - 'resident-runtime/activation-manifest.json'
+      - 'resident-runtime/systemd/stegverse-002-resident.service'
       - 'org-boundary/runtime/process_boundary.py'
       - 'resident-runtime/federation_cycle.py'
       - 'resident-runtime/federation_gateway_transport.py'
@@ -92,3 +98,8 @@ jobs:
       # leaves no clock value unmarked.
       - name: Validate no consuming route takes its time from the clock
         run: python -m unittest tests.test_epoch_clock_marker -v
+
+      # Every manifest-declared entrypoint that needs an epoch declares its binding,
+      # and the declared supplier passes it (MANIFEST_ENTRYPOINT_LACKS_EPOCH_BINDING).
+      - name: Validate every epoch-requiring entrypoint is bound in its manifest
+        run: python -m unittest tests.test_manifest_epoch_bindings -v
