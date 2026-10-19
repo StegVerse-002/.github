@@ -144,8 +144,9 @@ class LedgerWriterSuppliedEpoch(unittest.TestCase):
 
 
 #: Text a CLI or STEGVERSE_HB_EPOCH can carry. int() would take the first
-#: three as 33; the shared rule takes only ASCII digits. None is absent.
-REFUSED_EPOCH_TEXT = ("+33", "\uff13\uff13", " 33", "True", "abc", "33.7", None)
+#: three as 33; the shared rule takes only ASCII digits. "" is supplied and
+#: empty, so invalid; None is absent (an unset STEGVERSE_HB_EPOCH).
+REFUSED_EPOCH_TEXT = ("+33", "\uff13\uff13", " 33", "True", "abc", "33.7", "", None)
 ACCEPTED_EPOCH_TEXT = "4096"
 INGRESS = ROOT / "resident-runtime/intr_destination_ingress.py"
 EGRESS = ROOT / "resident-runtime/organization_egress_boundary.py"

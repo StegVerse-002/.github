@@ -271,11 +271,13 @@ SELF_CLOSURE_EPOCH_RETRY_ENTRYPOINT = ("resident-runtime/intr_destination_ingres
 
 
 def _supplied_epoch(hb_epoch: Any) -> Any:
-    """The caller's epoch, else the environment's raw text. The shared rule judges it."""
+    """The caller's epoch, else the environment's raw text. The shared rule judges it.
+
+    Unset is no epoch. Set but empty is an epoch that was supplied and is invalid.
+    """
     if hb_epoch is not None:
         return hb_epoch
-    value = os.environ.get(SUPPLIED_EPOCH_ENV)
-    return None if value == "" else value
+    return os.environ.get(SUPPLIED_EPOCH_ENV)
 
 
 def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,

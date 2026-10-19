@@ -219,9 +219,10 @@ class TheWorkflowEpochGateIsTheKernelRefusal(unittest.TestCase):
         self.assertLess(workflow.index(EPOCH_GATE_STEP), workflow.index("--self-closure"))
 
     def test_absent_and_invalid_epochs_print_the_six_field_refusal(self):
-        cases = [(_ABSENT, "HB_EPOCH_NOT_SUPPLIED")] + [
+        # A dispatch string input cannot tell empty from absent: both are not supplied.
+        cases = [(_ABSENT, "HB_EPOCH_NOT_SUPPLIED"), ("", "HB_EPOCH_NOT_SUPPLIED")] + [
             (text, "HB_EPOCH_INVALID")
-            for text in ("", "\uff13\uff13", "\u0663\u0663", "+33", " 33", "33.0", "31", "abc")]
+            for text in ("\uff13\uff13", "\u0663\u0663", "+33", " 33", "33.0", "31", "abc")]
         for hb_epoch, code in cases:
             with self.subTest(hb_epoch=hb_epoch if hb_epoch is not _ABSENT else "<absent>"):
                 completed = self.run_gate(hb_epoch)

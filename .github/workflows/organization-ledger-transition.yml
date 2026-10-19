@@ -135,9 +135,10 @@ jobs:
 
       # Time is supplied with the dispatch. It is not sampled from a clock. The
       # kernel's writer rule judges the raw input text before anything is
-      # appended: an absent input is HB_EPOCH_NOT_SUPPLIED, anything that is not
-      # ASCII digits at or above the anchor epoch is HB_EPOCH_INVALID, and
-      # either prints the six-field refusal and exits 1.
+      # appended. A workflow_dispatch string input cannot tell empty from
+      # absent, so both are HB_EPOCH_NOT_SUPPLIED; anything else that is not
+      # ASCII digits at or above the anchor epoch is HB_EPOCH_INVALID. Either
+      # prints the six-field refusal and exits 1.
       - name: Refuse an absent or invalid supplied epoch before any append
         env:
           DISPATCH_INPUTS: ${{ toJSON(github.event.inputs) }}
@@ -149,6 +150,8 @@ jobs:
           spec.loader.exec_module(kernel)
           inputs = json.loads(os.environ.get("DISPATCH_INPUTS") or "null")
           hb_epoch = inputs.get("hb_epoch") if isinstance(inputs, dict) else None
+          if hb_epoch == "":
+              hb_epoch = None
           refusal = kernel.writer_epoch_refusal(
               hb_epoch,
               retry_entrypoint=".github/workflows/organization-ledger-transition.yml (workflow_dispatch input hb_epoch)")
