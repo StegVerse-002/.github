@@ -9,7 +9,7 @@ jobs:
   execute:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 org-boundary/tests/test_process_boundary.py
       - run: python3 -m unittest -v tests.test_self_characterization_hierarchical_ledger
       - run: python3 -m unittest -v tests.test_sv002_master_records_organization_record_handoff

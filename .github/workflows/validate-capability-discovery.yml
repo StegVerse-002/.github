@@ -9,6 +9,8 @@ name: SV002 Capability Discovery
       - "org-boundary/runtime/process_boundary.py"
       - "tests/test_capability_discovery_surface.py"
       - ".github/workflows/validate-capability-discovery.yml"
+      - ".github/workflows/**"
+      - "tests/test_workflow_action_pins.py"
   pull_request:
     paths:
       - "org-boundary/registry/capabilities.json"
@@ -16,6 +18,8 @@ name: SV002 Capability Discovery
       - "resident-runtime/capability_discovery_surface.py"
       - "org-boundary/runtime/process_boundary.py"
       - "tests/test_capability_discovery_surface.py"
+      - ".github/workflows/**"
+      - "tests/test_workflow_action_pins.py"
 
 permissions:
   contents: read
@@ -24,6 +28,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - run: python3 -m py_compile resident-runtime/capability_discovery_surface.py org-boundary/runtime/process_boundary.py
       - run: python3 -m unittest tests.test_capability_discovery_surface
+      - run: python3 -m unittest -v tests.test_workflow_action_pins
