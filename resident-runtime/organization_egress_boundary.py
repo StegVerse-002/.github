@@ -368,13 +368,13 @@ def _record(transition_id: str, transition_class: str, predecessor: str, success
     A later attempt for the same transition returns the recorded pair. Identity
     is the transition id and class, plus the communication id, payload digest,
     and disposition. A frame stamped at another time is the same transition.
-    The organization receipt takes the repository receipt's epoch.
+    The organization writer takes the epoch supplied here, never one read back
+    from the repository receipt.
     """
     repository_receipt = repository_ledger.append(
         transition_id, transition_class, predecessor, successor,
         dict(record), "NONE", hb_epoch=hb_epoch,
         idempotent_on=("communication_id", "payload_sha256", "disposition"))
-    epoch = repository_receipt["hb_reference"]["epoch"]
     boundary = {
         "operation": OPERATION_ID,
         "intended_action": record["intended_action"],
@@ -385,9 +385,27 @@ def _record(transition_id: str, transition_class: str, predecessor: str, success
         boundary["communication_id"] = record["communication_id"]
     organization_receipt = organization_ledger.append(
         repository_receipt, "REPO_STATE_PROPAGATION", predecessor, successor,
-        boundary, "NONE", hb_epoch=epoch, idempotent=True)
+        boundary, "NONE", hb_epoch=hb_epoch, idempotent=True)
     return {"repository_receipt": repository_receipt,
             "organization_receipt": organization_receipt}
+
+
+class _PublishRefused(Exception):
+    """Carries a refusal past the emission's ValueError handler, so it is not recorded as one."""
+
+    def __init__(self, refusal: Mapping[str, Any]):
+        super().__init__(refusal.get("failure_code"))
+        self.refusal = dict(refusal)
+
+
+def _recorded_source_refusal(transition_id: str, transition_class: str) -> dict[str, Any] | None:
+    """The refusal the organization writer would give this transition's recorded repository receipt.
+
+    Checked before a frame is published, so a frame never leaves when its
+    receipt pair cannot be completed (SOURCE_RECEIPT_IS_CLOCK_PROVENANCE).
+    """
+    prior = repository_ledger.recorded(transition_id, transition_class)
+    return None if prior is None else organization_ledger.source_provenance_refusal(prior)
 
 
 def _publish_epoch(hb_epoch: int | None) -> int | None:
@@ -414,13 +432,22 @@ def _refusal_result(record: Mapping[str, Any], appended: Mapping[str, Any]) -> d
     }
 
 
+EMIT_EPOCH_RETRY_ENTRYPOINT = "resident-runtime/organization_egress_boundary.py::emit (hb_epoch=, or --hb-epoch)"
+CLOSE_EPOCH_RETRY_ENTRYPOINT = "resident-runtime/organization_egress_boundary.py::close (hb_epoch=, or --hb-epoch)"
+
+
 def emit(destination_organization: Any, payload: Mapping[str, Any], *,
          standing: Mapping[str, Any], capability: str | None = None,
          credential_authority: Mapping[str, Any] | None = None,
          transition_reference: str = "ecosystem.transition.interorg.v1",
          root: Path | None = None, mesh_root: Path | None = None,
          hb_epoch: int | None = None) -> dict[str, Any]:
-    """Emit one closable crossing to a derived capability address, and record it."""
+    """Emit one closable crossing to a derived capability address, and record it.
+
+    The epoch is the caller's and is checked before anything is published, so
+    a frame never leaves without the receipt that records it.
+    """
+    hb_epoch = kernel.supplied_epoch(hb_epoch, retry_entrypoint=EMIT_EPOCH_RETRY_ENTRYPOINT)
     origin = this_organization(root)
     try:
         if credential_authority is not None:
@@ -444,7 +471,12 @@ def emit(destination_organization: Any, payload: Mapping[str, Any], *,
             destination_service=resolved["destination_service"],
             payload=dict(payload),
             transition_reference=transition_reference, authority_effect="NONE")
+        refusal = _recorded_source_refusal(EMITTED_CLASS + ":" + packet["packet_id"], EMITTED_CLASS)
+        if refusal is not None:
+            raise _PublishRefused(refusal)
         published = kernel.publish_packet(packet, root=mesh_root, now_ns=_publish_epoch(hb_epoch))
+    except _PublishRefused as held:
+        raise organization_ledger.OrgLedgerEpochRefused(held.refusal) from None
     except EgressRefused as exc:
         record = emit_refusal_record(exc.failed_predicate, exc.reason,
                                      destination_organization, origin, payload)
@@ -724,13 +756,15 @@ def close(destination_organization: str, packet_id: str, communication_id: str, 
     }
 
 
-def main() -> int:
+def _main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--destination-organization", required=True)
     parser.add_argument("--payload", type=Path)
     parser.add_argument("--standing", type=Path)
     parser.add_argument("--transition-reference", default="ecosystem.transition.interorg.v1")
-    parser.add_argument("--hb-epoch", type=int, default=None)
+    # The raw text goes to the shared epoch rule: argparse's int() would take
+    # "+33", " 33" or fullwidth digits as 33.
+    parser.add_argument("--hb-epoch", default=None)
     parser.add_argument("--close", action="store_true")
     parser.add_argument("--packet-id")
     parser.add_argument("--communication-id")
@@ -738,25 +772,44 @@ def main() -> int:
     parser.add_argument("--mesh-root", type=Path)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
-    if args.close:
-        if not args.packet_id or not args.communication_id:
-            raise SystemExit("--close requires --packet-id and --communication-id")
-        result = close(args.destination_organization, args.packet_id, args.communication_id,
-                       mesh_root=args.mesh_root, hb_epoch=args.hb_epoch)
-    else:
-        if args.payload is None or args.standing is None:
-            raise SystemExit("emit requires --payload and --standing")
-        standing = json.loads(args.standing.read_text(encoding="utf-8"))
-        payload = json.loads(args.payload.read_text(encoding="utf-8"))
-        result = emit(args.destination_organization, payload, standing=standing,
-                      capability=args.capability, transition_reference=args.transition_reference,
-                      mesh_root=args.mesh_root, hb_epoch=args.hb_epoch)
+    try:
+        if args.close:
+            if not args.packet_id or not args.communication_id:
+                raise SystemExit("--close requires --packet-id and --communication-id")
+            result = close(args.destination_organization, args.packet_id, args.communication_id,
+                           mesh_root=args.mesh_root, hb_epoch=args.hb_epoch)
+        else:
+            if args.payload is None or args.standing is None:
+                raise SystemExit("emit requires --payload and --standing")
+            standing = kernel.read_json_input(args.standing, argument="--standing",
+                                              retry_entrypoint=EMIT_EPOCH_RETRY_ENTRYPOINT)
+            payload = kernel.read_json_input(args.payload, argument="--payload",
+                                             retry_entrypoint=EMIT_EPOCH_RETRY_ENTRYPOINT)
+            result = emit(args.destination_organization, payload, standing=standing,
+                          capability=args.capability, transition_reference=args.transition_reference,
+                          mesh_root=args.mesh_root, hb_epoch=args.hb_epoch)
+    except ValueError as exc:
+        # Each loaded kernel has its own SuppliedEpochRefused class.
+        if not isinstance(getattr(exc, "refusal", None), dict):
+            raise
+        print(json.dumps(exc.refusal, sort_keys=True))
+        return 1
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(rendered, encoding="utf-8")
     print(json.dumps(result, sort_keys=True))
     return 0 if result.get("disposition") in {ALLOW, PENDING} else 1
+
+
+def main() -> int:
+    """Emit one crossing, or close it.
+
+    F-WRITER-TRACE: it never ends in a traceback. A fault writing this
+    repository's own state is a six-field, non-terminal record (exit status
+    kernel.OWN_STATE_WRITE_FAULT_EXIT); bad input is a six-field refusal.
+    """
+    return kernel.run_writer_cli(_main, EMIT_EPOCH_RETRY_ENTRYPOINT)
 
 
 if __name__ == "__main__":
