@@ -3,6 +3,11 @@
 
 This is an organization-local handoff. It does not re-run the principal, grant
 authority, or treat publication as organization-record acceptance/reconstruction success.
+
+The published frame and the handoff receipt are stamped at the supplied epoch
+(``--hb-epoch``, else ``STEGVERSE_HB_EPOCH``). process_boundary, a receipt writer,
+passes it. An absent or invalid one is refused six-field before anything is
+read or written; the kernel's clock default is never reached from here.
 """
 from __future__ import annotations
 
@@ -69,10 +74,19 @@ def artifact_bundle(state_root:Path)->tuple[list[dict[str,Any]],str,str]:
     ]))
     return artifacts,root_hash,run_id
 
+EPOCH_RETRY_ENTRYPOINT=("resident-runtime/submit_sv002_self_characterization_to_master_records.py "
+                        "(--hb-epoch, or "+K.SUPPLIED_EPOCH_ENV+")")
+
 def main()->int:
+    return K.run_writer_cli(_main,EPOCH_RETRY_ENTRYPOINT)
+
+def _main()->int:
     ap=argparse.ArgumentParser()
     ap.add_argument("--state-root",type=Path,required=True)
+    # The raw text goes to the shared epoch rule.
+    ap.add_argument("--hb-epoch",default=None)
     args=ap.parse_args()
+    hb_epoch=K.supplied_epoch(K.caller_epoch(args.hb_epoch),retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
     state_root=args.state_root.expanduser().resolve()
     artifacts,artifact_set_sha256,run_id=artifact_bundle(state_root)
     receipt_path=state_root/HANDOFF_RECEIPT
@@ -102,7 +116,7 @@ def main()->int:
         transition_reference="sv002.self-characterization.master-records-organization-record.v1",
         authority_effect="NONE",
     )
-    published=K.publish_packet(packet)
+    published=K.publish_packet(packet,now_ns=K.epoch_now_ns(hb_epoch))
     receipt={
         "schema":"stegverse.sv002-master-records-organization-record-handoff/v1",
         "experiment_id":EXPERIMENT_ID,
@@ -113,11 +127,12 @@ def main()->int:
         "frame_sha256":published["frame"]["frame_sha256"],
         "frame_path":published["path"],
         "state":"PUBLISHED_FOR_MASTER_RECORDS_ORGANIZATION_RECORD",
+        "observed_at":f"hb-epoch:{hb_epoch}",
         "principal_rerun_required":False,
         "authority_transfer":False,
         "authority_effect":"NONE",
     }
-    receipt_path.write_text(json.dumps(receipt,indent=2,sort_keys=True)+"\n",encoding="utf-8")
+    K._write_json_atomic(receipt_path,receipt)
     print(json.dumps(receipt,sort_keys=True))
     return 0
 

@@ -78,6 +78,7 @@ def _module(name: str, relative: str):
 repository_ledger = _module("repo_transition_emit", ".stegverse/transition-ledger/emit.py")
 organization_ledger = _module("aggregate_repo_transition",
                               "resident-runtime/aggregate_repo_transition.py")
+kernel = repository_ledger.kernel
 
 
 def canon(value: Any) -> bytes:
@@ -140,6 +141,26 @@ def _evidence(payload: Any, packet_id: str, disposition: str, *,
     return record
 
 
+class PacketIdCollision(ValueError):
+    """A packet id already bound to a different diagnostic: refused six-field, nothing written."""
+
+    def __init__(self, packet_id: str, evidence: Mapping[str, Any]) -> None:
+        self.refusal = {
+            "disposition": FAIL_CLOSED,
+            "failure_code": "PACKET_ID_BINDS_ANOTHER_DIAGNOSTIC",
+            "failed_predicate": "ONE_PACKET_ID_BINDS_ONE_DIAGNOSTIC",
+            "detail": "packet " + str(packet_id) + " is already recorded with another diagnostic; payload "
+                      + str(evidence.get("payload_sha256")) + " is not that one",
+            "required_evidence_or_repair": "the sender emits this diagnostic under a new packet id",
+            "retry_entrypoint": "the sender's hop",
+            "owning_existing_goal": "INTERLOCK-INTR-RUNTIME-INDEPENDENT-PROTOCOL-001",
+            "next_attempt": "none for this packet id; the recorded transition stands",
+            "derived_from_clock": False,
+            "consequence_committed": False,
+        }
+        super().__init__(self.refusal["failure_code"] + ": " + self.refusal["detail"])
+
+
 def _result(evidence: Mapping[str, Any], appended: Mapping[str, Any] | None, *,
             replayed: bool, received: bool) -> dict[str, Any]:
     disposition = evidence["disposition"]
@@ -200,15 +221,15 @@ def _append(transition_class: str, packet_id: str, evidence: Mapping[str, Any],
         transition_id, transition_class, predecessor, successor, dict(evidence),
         "NONE", hb_epoch=hb_epoch,
         idempotent_on=("communication_id", "payload_sha256", "disposition"))
-    # The organization receipt takes the repository receipt's epoch, so a replay
-    # returns the recorded organization receipt rather than one stamped later.
-    epoch = (repository_receipt.get("hb_reference") or {}).get("epoch")
+    # The organization writer takes the epoch supplied here, never one read back
+    # from the repository receipt: a replayed receipt's epoch was not supplied to
+    # this call. A replay still returns the recorded organization receipt.
     organization_receipt = organization_ledger.append(
         repository_receipt, "REPO_STATE_PROPAGATION", predecessor, successor,
         {"operation": OPERATION_ID, "profile_id": PROFILE_ID,
          "disposition": evidence["disposition"],
          "communication_id": evidence.get("communication_id")},
-        "NONE", hb_epoch=epoch, idempotent=True)
+        "NONE", hb_epoch=hb_epoch, idempotent=True)
     return ({"repository_receipt": repository_receipt,
              "organization_receipt": organization_receipt}, prior is not None)
 
@@ -224,11 +245,10 @@ def _recorded(disposition: str, payload: Any, packet_id: str, hb_epoch: int | No
         if str(exc) != "ledger_receipt_collision":
             raise
         # The packet id already bound a different diagnostic. The recorded
-        # transition stands; this attempt is not a second one.
-        collided = _evidence(payload, packet_id, FAIL_CLOSED,
-                             failed_predicate="ONE_PACKET_ID_BINDS_ONE_DIAGNOSTIC",
-                             detail=str(exc))
-        return _result(collided, None, replayed=False, received=False)
+        # transition stands; this attempt is refused before anything is written
+        # or answered. A store-side collision is not this: the store raises it
+        # as its own write fault (ledger_store.LedgerWriteFailed).
+        raise PacketIdCollision(packet_id, evidence) from None
     return _result(evidence, appended, replayed=replayed, received=disposition == ALLOW)
 
 
@@ -242,7 +262,8 @@ def receive(payload: Any, *, registry: Mapping[str, Any], standing: Mapping[str,
     carry standing, and a diagnostic does not leave, so neither is used.
     """
     del standing, mesh_root
-    hb_epoch = _supplied_epoch(hb_epoch)
+    hb_epoch = kernel.supplied_epoch(_supplied_epoch(hb_epoch),
+                                     retry_entrypoint=RECEIVE_EPOCH_RETRY_ENTRYPOINT)
     if not isinstance(registry, Mapping):
         return _recorded(DENY, payload, packet_id, hb_epoch,
                          failed_predicate="CAPABILITY_MAP_IS_A_MAPPING",
@@ -262,11 +283,20 @@ SELF_CLOSURE_SCHEMA = "stegverse.org-intr-destination-self-closure/v1"
 SUPPLIED_EPOCH_ENV = "STEGVERSE_HB_EPOCH"
 
 
-def _supplied_epoch(hb_epoch: int | None) -> int | None:
+RECEIVE_EPOCH_RETRY_ENTRYPOINT = ("resident-runtime/intr_destination_ingress.py::receive "
+                                  "(hb_epoch=, --hb-epoch, or " + SUPPLIED_EPOCH_ENV + ")")
+SELF_CLOSURE_EPOCH_RETRY_ENTRYPOINT = ("resident-runtime/intr_destination_ingress.py::"
+                                       "diagnostic_self_closure (hb_epoch=, or --hb-epoch)")
+
+
+def _supplied_epoch(hb_epoch: Any) -> Any:
+    """The caller's epoch, else the environment's raw text. The shared rule judges it.
+
+    Unset is no epoch. Set but empty is an epoch that was supplied and is invalid.
+    """
     if hb_epoch is not None:
         return hb_epoch
-    value = os.environ.get(SUPPLIED_EPOCH_ENV, "")
-    return int(value) if value.isdigit() else None
+    return os.environ.get(SUPPLIED_EPOCH_ENV)
 
 
 def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
@@ -298,6 +328,7 @@ def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
         }
     egress = _module("egress_self_closure", "resident-runtime/organization_egress_boundary.py")
     kernel_mod = _module("kernel_self_closure", "org-kernel/kernel.py")
+    hb_epoch = kernel_mod.supplied_epoch(hb_epoch, retry_entrypoint=SELF_CLOSURE_EPOCH_RETRY_ENTRYPOINT)
     origin = kernel_mod.load_registry(ROOT)["organization"]
     payload = {
         "message_class": COMMUNICATION_CLASS,
@@ -337,23 +368,32 @@ def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
         result["failed_predicate"] = emitted.get("failed_predicate")
         result["detail"] = emitted.get("detail")
         return result
-    # The kernel's dispatch does not carry an epoch to the receiving operation,
-    # so the supplied one travels with this process for the consume only.
-    previous_epoch = os.environ.get(SUPPLIED_EPOCH_ENV)
-    if hb_epoch is not None:
-        os.environ[SUPPLIED_EPOCH_ENV] = str(hb_epoch)
-    try:
-        consumed_frames = kernel_mod.consume_addressed_frames(ROOT, mesh_root=mesh_root)
-    finally:
-        if previous_epoch is None:
-            os.environ.pop(SUPPLIED_EPOCH_ENV, None)
-        else:
-            os.environ[SUPPLIED_EPOCH_ENV] = previous_epoch
-    if len(consumed_frames) != 1 or consumed_frames[0]["result"].get("status") != "CONSUMED":
+    # Only the frame this closure emitted is ingested, picked by its packet id, so a
+    # retry is not confused by the answer it published here before (B-P36q). The
+    # kernel's dispatch carries the supplied epoch to the receiving operation, and
+    # the receiving operation replays its recorded receipts on a retry.
+    frame = next((item["frame"] for item in kernel_mod.scan_addressed_frames(origin, root=mesh_root)
+                  if item["frame"].get("packet_id") == emitted["packet_id"]), None)
+    if frame is None:
         result["failed_predicate"] = "SELF_DIAGNOSTIC_IS_CONSUMED_AT_THIS_ADDRESS"
-        result["detail"] = "the emitted frame was not consumed here"
+        result["detail"] = "the emitted frame is not in the mesh"
         return result
-    consumed = consumed_frames[0]["result"]
+    try:
+        consumed = kernel_mod.ingest_frame(ROOT, frame, mesh_root=mesh_root, hb_epoch=hb_epoch,
+                                           explicit=False)
+    except Exception as error:
+        if kernel_mod.own_state_fault(error):
+            # A fault writing this organization's own state: non-terminal, and the
+            # retry resumes from what was recorded (run_writer_cli prints six fields).
+            raise
+        refusal = kernel_mod.frame_failure_refusal(error)
+        result["failed_predicate"] = refusal.get("failed_predicate")
+        result["detail"] = refusal.get("detail")
+        return result
+    if consumed.get("status") != "CONSUMED":
+        result["failed_predicate"] = "SELF_DIAGNOSTIC_IS_CONSUMED_AT_THIS_ADDRESS"
+        result["detail"] = "the emitted frame was not consumed here: " + str(consumed.get("status"))
+        return result
     execution = consumed["execution_result"]
     operation = (execution.get("application_result") or {}).get("receiving_operation_result") or {}
     result["ingress_disposition"] = operation.get("disposition")
@@ -364,11 +404,10 @@ def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
         result["detail"] = operation.get("detail")
         return result
     response = kernel_mod.build_control_response(consumed["packet"], execution)
-    now_ns = None
-    if hb_epoch is not None:
-        now_ns = (kernel_mod.HB_ANCHOR_UNIX_NS
-                  + (hb_epoch - kernel_mod.HB_ANCHOR_EPOCH) * kernel_mod.HB_PERIOD_NS)
-    kernel_mod.publish_packet(response, root=mesh_root, now_ns=now_ns)
+    # Built once per request, so a retry re-publishes the same answer (F-REPUB). The
+    # index lives with this run's mesh, the queue the retry reads from.
+    kernel_mod.publish_response_once(Path(mesh_root), consumed["packet"], response, mesh_root=mesh_root,
+                                     now_ns=kernel_mod.epoch_now_ns(hb_epoch))
     closed = egress.close(
         origin, emitted["packet_id"], communication_id, root=ROOT,
         mesh_root=mesh_root, hb_epoch=hb_epoch)
@@ -384,7 +423,7 @@ def diagnostic_self_closure(communication_id: str, *, mesh_root: Path,
     return result
 
 
-def main() -> int:
+def _main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--self-closure", action="store_true",
                         help="emit, receive, and close one diagnostic against this organization")
@@ -393,27 +432,48 @@ def main() -> int:
     parser.add_argument("--payload", type=Path, default=None)
     parser.add_argument("--registry", type=Path, default=None)
     parser.add_argument("--packet-id", default="organization-intr-destination")
-    parser.add_argument("--hb-epoch", type=int, default=None)
+    # The raw text goes to the shared epoch rule: argparse's int() would take
+    # "+33", " 33" or fullwidth digits as 33.
+    parser.add_argument("--hb-epoch", default=None)
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
-    if args.self_closure:
-        if args.mesh_root is None or args.communication_id is None:
-            raise SystemExit("self-closure requires --communication-id and --mesh-root")
-        result = diagnostic_self_closure(
-            args.communication_id, mesh_root=args.mesh_root, hb_epoch=args.hb_epoch)
-    else:
-        if args.payload is None or args.registry is None:
-            raise SystemExit("receive requires --payload and --registry")
-        result = receive(
-            json.loads(args.payload.read_text(encoding="utf-8")),
-            registry=json.loads(args.registry.read_text(encoding="utf-8")),
-            packet_id=args.packet_id, hb_epoch=args.hb_epoch)
+    try:
+        if args.self_closure:
+            if args.mesh_root is None or args.communication_id is None:
+                raise SystemExit("self-closure requires --communication-id and --mesh-root")
+            result = diagnostic_self_closure(
+                args.communication_id, mesh_root=args.mesh_root, hb_epoch=args.hb_epoch)
+        else:
+            if args.payload is None or args.registry is None:
+                raise SystemExit("receive requires --payload and --registry")
+            result = receive(
+                kernel.read_json_input(args.payload, argument="--payload",
+                                       retry_entrypoint=RECEIVE_EPOCH_RETRY_ENTRYPOINT),
+                registry=kernel.read_json_input(args.registry, argument="--registry",
+                                                retry_entrypoint=RECEIVE_EPOCH_RETRY_ENTRYPOINT),
+                packet_id=args.packet_id, hb_epoch=args.hb_epoch)
+    except ValueError as exc:
+        # Each loaded kernel has its own SuppliedEpochRefused class.
+        if not isinstance(getattr(exc, "refusal", None), dict):
+            raise
+        print(json.dumps(exc.refusal, sort_keys=True))
+        return 1
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(rendered, encoding="utf-8")
     print(json.dumps(result, sort_keys=True))
     return 0 if result.get("disposition") == ALLOW else 1
+
+
+def main() -> int:
+    """Receive one diagnostic, or run the self-closure.
+
+    F-WRITER-TRACE: it never ends in a traceback. A fault writing this
+    repository's own state is a six-field, non-terminal record (exit status
+    kernel.OWN_STATE_WRITE_FAULT_EXIT); bad input is a six-field refusal.
+    """
+    return kernel.run_writer_cli(_main, RECEIVE_EPOCH_RETRY_ENTRYPOINT)
 
 
 if __name__ == "__main__":

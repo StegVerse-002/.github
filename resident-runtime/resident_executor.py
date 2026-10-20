@@ -5,13 +5,20 @@ Continuously runs the canonical federation cycle and consumes the callable
 self-characterization binding declared by the existing activation manifest.
 GitHub Actions and other hosted CI environments are rejected as runtime
 authority.
+
+Every route it runs stamps time, so it takes the supplied epoch (``--hb-epoch``,
+else ``STEGVERSE_HB_EPOCH``) and refuses six-field before anything is written
+when there is none. Its heartbeat and its children are stamped from that epoch;
+no clock is read.
 """
 from __future__ import annotations
-import argparse, json, os, subprocess, sys, time
-from datetime import datetime, timezone
+import argparse, importlib.util, json, os, subprocess, sys, time
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
+_SPEC=importlib.util.spec_from_file_location("resident_executor_kernel",ROOT/"org-kernel"/"kernel.py")
+K=importlib.util.module_from_spec(_SPEC); _SPEC.loader.exec_module(K)
+EPOCH_RETRY_ENTRYPOINT="resident-runtime/resident_executor.py (--hb-epoch, or "+K.SUPPLIED_EPOCH_ENV+")"
 HOSTED=("GITHUB_ACTIONS","CI","RENDER","VERCEL","CF_PAGES","CLOUDFLARE_WORKERS")
 STATE=ROOT/"resident-runtime"/"state"
 ACTIVATION_MANIFEST=ROOT/"resident-runtime"/"activation-manifest.json"
@@ -102,10 +109,20 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--once",action="store_true")
     ap.add_argument("--poll-seconds",type=float,default=1.0)
+    # The raw text goes to the shared epoch rule.
+    ap.add_argument("--hb-epoch",default=None)
     a=ap.parse_args()
     bad=[k for k in HOSTED if truthy(os.getenv(k))]
     if bad:
         raise SystemExit("hosted runtime prohibited: "+",".join(bad))
+    refusal=K.writer_epoch_refusal(K.caller_epoch(a.hb_epoch),retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
+    if refusal is not None:
+        # Before the callable, the cycle or the heartbeat: nothing is written.
+        print(json.dumps(refusal,sort_keys=True))
+        return 1
+    hb_epoch=K.supplied_epoch(K.caller_epoch(a.hb_epoch),retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
+    # The callable publisher and the federation cycle inherit it (run_json passes the environment).
+    os.environ[K.SUPPLIED_EPOCH_ENV]=str(hb_epoch)
     iteration=0
     callable_attempted=False
     callable_completed=False
@@ -130,7 +147,7 @@ def main():
         state={
             "schema":"stegverse.organization-resident-executor/v1",
             "organization":"StegVerse-002",
-            "observed_at":datetime.now(timezone.utc).isoformat(),
+            "observed_at":f"hb-epoch:{hb_epoch}",
             "iteration":iteration,
             "state":"RUNNING" if error is None else "DEGRADED",
             "federation_cycle":fed,

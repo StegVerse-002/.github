@@ -14,7 +14,6 @@ import importlib.util
 import json
 import os
 import re
-from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,8 +22,13 @@ _spec = importlib.util.spec_from_file_location(
     "ledger_store", ROOT / "resident-runtime/ledger_store.py")
 ledger_store = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(ledger_store)
+_spec = importlib.util.spec_from_file_location("repo_ledger_kernel", ROOT / "org-kernel/kernel.py")
+kernel = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(kernel)
 
 CHAIN_BREAK = "REPO_LEDGER_CHAIN_BREAK"
+EPOCH_RETRY_ENTRYPOINT = ".stegverse/transition-ledger/emit.py::append (hb_epoch=, or --hb-epoch)"
+RepoLedgerEpochRefused = kernel.SuppliedEpochRefused
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
@@ -140,16 +144,22 @@ def _heartbeat(hb_epoch):
         "epoch": hb_epoch,
         "progression_dependency": "OSCILLATOR_ONLY",
         "authority_effect": "NONE",
+        "derived_from_clock": False,
     }
 
 
 def append(transition_id, transition_class, predecessor_state_sha256, successor_state_sha256,
            evidence=None, authority_effect="NONE", hb_epoch=None, idempotent_on=None, store=None):
-    """Append one repository receipt. A replay of the same transition returns the recorded one."""
+    """Append one repository receipt. A replay of the same transition returns the recorded one.
+
+    The epoch is the caller's. An absent or invalid one is refused six-field
+    FAIL_CLOSED before the store opens; no clock stands in for it.
+    """
+    hb_epoch = kernel.supplied_epoch(hb_epoch, retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
     evidence = dict(evidence or {})
     target = store or ledger_store.open_store(lr())
     target.initialize()
-    observed = f"hb-epoch:{hb_epoch}" if hb_epoch is not None else datetime.now(timezone.utc).isoformat()
+    observed = f"hb-epoch:{hb_epoch}"
     for _attempt in range(128):
         expected_head = target.get(ledger_store.HEAD_KEY)
         prior = recorded(transition_id, transition_class, store=target)
@@ -181,12 +191,14 @@ def append(transition_id, transition_class, predecessor_state_sha256, successor_
             "receipt_sha256": digest,
             "receipt_path": target.locator(key),
         }
-        if target.append_transaction(key, record, expected_head, new_head):
+        if ledger_store.transact(target, key, record, expected_head, new_head):
             return record
-    raise SystemExit("REPO_LEDGER_APPEND_CONTENTION_EXHAUSTED")
+    # Every comparison was lost and nothing was published: a fault in this
+    # ledger's own state, which the caller retries, not a refusal of the receipt.
+    raise ledger_store.LedgerWriteFailed("LEDGER_APPEND_LOST_COMPARISON", "REPO_LEDGER_APPEND_CONTENTION_EXHAUSTED")
 
 
-def main():
+def _main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--transition-id", required=True)
     parser.add_argument("--transition-class", required=True)
@@ -194,18 +206,36 @@ def main():
     parser.add_argument("--successor-state-sha256", required=True)
     parser.add_argument("--evidence-json", default="{}")
     parser.add_argument("--authority-effect", default="NONE")
-    parser.add_argument("--hb-epoch", type=int, default=None)
+    # The raw text goes to the shared epoch rule: argparse's int() would take
+    # "+33", " 33" or fullwidth digits as 33.
+    parser.add_argument("--hb-epoch", default=None)
     args = parser.parse_args()
     try:
         record = append(
             args.transition_id, args.transition_class, args.predecessor_state_sha256,
-            args.successor_state_sha256, json.loads(args.evidence_json), args.authority_effect,
+            args.successor_state_sha256,
+            kernel.parse_json_input(args.evidence_json, argument="--evidence-json",
+                                    retry_entrypoint=EPOCH_RETRY_ENTRYPOINT),
+            args.authority_effect,
             hb_epoch=args.hb_epoch)
     except RepoLedgerChainBreak as exc:
         print(json.dumps(chain_break_refusal(exc), sort_keys=True))
         raise SystemExit(1)
+    except RepoLedgerEpochRefused as exc:
+        print(json.dumps(exc.refusal, sort_keys=True))
+        raise SystemExit(1)
     print(json.dumps(record, sort_keys=True))
 
 
+def main():
+    """Append one repository receipt from the command line.
+
+    F-WRITER-TRACE: it never ends in a traceback. A fault writing this
+    repository's own state is a six-field, non-terminal record (exit status
+    kernel.OWN_STATE_WRITE_FAULT_EXIT); bad input is a six-field refusal.
+    """
+    return kernel.run_writer_cli(_main, EPOCH_RETRY_ENTRYPOINT)
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
