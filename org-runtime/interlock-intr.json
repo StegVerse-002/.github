@@ -40,7 +40,16 @@
           "admission_authority_constraint": "CONSTRAINT_VARIABLE",
           "execution_authority_constraint": "CONSTRAINT_VARIABLE",
           "time_constraint": "CONSTRAINT_VARIABLE",
-          "disposition_role": "TRANSITION_EVIDENCE_ONLY"
+          "disposition_role": "TRANSITION_EVIDENCE_ONLY",
+          "hb_epoch_binding": {
+            "requires_hb_epoch": true,
+            "from": "frame_heartbeat",
+            "rule": "org-kernel/kernel.py::consuming_epoch",
+            "supplied_by": "org-kernel/kernel.py::ingest_frame",
+            "forwarded_by": "org-boundary/runtime/capability_ingress.py::receive",
+            "dispatcher": ".github/workflows/organization-ledger-transition.yml",
+            "reached_from": "resident-runtime/intr_destination_ingress.py"
+          }
         },
         "binding_role": "ORGANIZATION_RECEIVING_OPERATION_RESOLUTION",
         "authority_effect": "NONE_BINDING_ONLY",
@@ -82,7 +91,16 @@
       "execution_authority_constraint": "CONSTRAINT_VARIABLE",
       "time_constraint": "CONSTRAINT_VARIABLE",
       "disposition_role": "TRANSITION_EVIDENCE_ONLY",
-      "environment_selected_ingress": false
+      "environment_selected_ingress": false,
+      "hb_epoch_binding": {
+        "requires_hb_epoch": true,
+        "from": "dispatch_input",
+        "input": "hb_epoch",
+        "supplied_by": ".github/workflows/organization-ledger-transition.yml",
+        "forwarded_by": "resident-runtime/intr_destination_ingress.py::diagnostic_self_closure",
+        "dispatcher": ".github/workflows/organization-ledger-transition.yml",
+        "reached_from": "resident-runtime/intr_destination_ingress.py"
+      }
     },
     "peer_capability_resolution": {
       "address_form": "ORGANIZATION_SLUG_DOT_CAPABILITY_PROFILE_ID",

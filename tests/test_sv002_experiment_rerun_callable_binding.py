@@ -24,8 +24,22 @@ EXEC_SPEC = importlib.util.spec_from_file_location(
 E = importlib.util.module_from_spec(EXEC_SPEC)
 EXEC_SPEC.loader.exec_module(E)
 
+#: The epoch the resident executor supplies to the callable; no clock stands in.
+HB_EPOCH = 4096
+
 
 class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
+    def test_an_absent_epoch_is_refused_six_field_before_anything_is_written(self):
+        with tempfile.TemporaryDirectory() as td:
+            state = Path(td) / "state"
+            env = {"STEGVERSE_SELF_CHAR_STATE_ROOT": str(state), "GITHUB_ACTIONS": "", "CI": ""}
+            with patch.dict(os.environ, env, clear=False):
+                os.environ.pop("STEGVERSE_HB_EPOCH", None)
+                with self.assertRaises(ValueError) as refused:
+                    M.invoke_once()
+            self.assertEqual(refused.exception.refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+            self.assertFalse(state.exists())
+
     def test_builds_exact_frozen_request(self):
         request, manifest = M.build_frozen_request()
         self.assertEqual(request["operation"], "REQUEST_SELF_CHARACTERIZATION")
@@ -47,6 +61,7 @@ class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
                 "STEGVERSE_ORG_FEDERATION_GATEWAY_URL": "",
                 "GITHUB_ACTIONS": "",
                 "CI": "",
+                "STEGVERSE_HB_EPOCH": str(HB_EPOCH),
             }
             custody = {
                 "state": "RECORDED",
@@ -61,11 +76,14 @@ class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
                 second = M.invoke_once()
 
             self.assertEqual(first["state"], "SUBMITTED_EXISTING_FEDERATION_EDGE")
+            self.assertEqual(first["submitted_at"], f"hb-epoch:{HB_EPOCH}")
             self.assertEqual(second["state"], "ALREADY_SUBMITTED_NO_SECOND_REQUEST")
             self.assertEqual(first["frame_sha256"], second["frame_sha256"])
             self.assertEqual(len(list((mesh / "frames.d").glob("*.json"))), 1)
             bound = json.loads((state / "RERUN_REQUEST_BOUND.json").read_text())
             self.assertEqual(bound["state"], "REQUEST_BOUND")
+            self.assertEqual(bound["frame"]["heartbeat_reference"]["epoch"], HB_EPOCH)
+            self.assertIs(bound["frame"]["heartbeat_reference"]["derived_from_clock"], False)
             self.assertEqual(bound["invocation_count"], 1)
 
     def test_blocked_submission_preserves_request_bound_evidence(self):
@@ -77,6 +95,7 @@ class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
                 "STEGVERSE_ORG_FEDERATION_GATEWAY_URL": "",
                 "GITHUB_ACTIONS": "",
                 "CI": "",
+                "STEGVERSE_HB_EPOCH": str(HB_EPOCH),
             }
             custody = {
                 "state": "RECORDED",
@@ -124,7 +143,7 @@ class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
     def test_request_bound_requires_canonical_master_records_organization_record(self):
         with tempfile.TemporaryDirectory() as td:
             state = Path(td) / "state"
-            frame, bound = M._load_or_bind_frame(state)
+            frame, bound = M._load_or_bind_frame(state, HB_EPOCH)
             class FakeCustody:
                 @staticmethod
                 def build_state_receipt(**kwargs):
@@ -186,7 +205,7 @@ class SV002ExperimentRerunCallableBindingTests(unittest.TestCase):
         for name in (M.REQUEST_BOUND_ORGANIZATION_RECORD, M.LEGACY_REQUEST_BOUND_ORGANIZATION_RECORD):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as td:
                 state = Path(td) / "state"
-                M._load_or_bind_frame(state)
+                M._load_or_bind_frame(state, HB_EPOCH)
                 (state / name).write_text(json.dumps({
                     "state": "RECORDED",
                     "reconstruction_status": "PASS",

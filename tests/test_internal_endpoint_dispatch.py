@@ -18,12 +18,15 @@ class InternalEndpointDispatchTests(unittest.TestCase):
             processor.write_text(textwrap.dedent("""
                 import argparse, json
                 from pathlib import Path
-                ap=argparse.ArgumentParser(); ap.add_argument("--envelope"); ap.add_argument("--out"); a=ap.parse_args()
+                ap=argparse.ArgumentParser(); ap.add_argument("--envelope"); ap.add_argument("--out"); ap.add_argument("--hb-epoch"); a=ap.parse_args()
                 packet=json.loads(Path(a.envelope).read_text())
                 Path(a.out).write_text(json.dumps({"service_id":packet["destination"]["service"],"consumed":True,"application_result":{"ok":True},"authority_effect":"NONE","receipts":[],"reconstruction":{"status":"PENDING_MASTER_RECORDS"}}))
             """))
             packet=K.build_packet(origin_org="Source-Org",origin_service="source.sdk",destination_org="Target-Org",destination_service="target.endpoint",payload={"request":{"bindings":{"manifest_sha256":"a"*64}}})
-            result=K.dispatch(root,packet)
+            with self.assertRaises(K.SuppliedEpochRefused) as refused:
+                K.dispatch(root,packet)
+            self.assertEqual(refused.exception.refusal["failure_code"],"HB_EPOCH_NOT_SUPPLIED")
+            result=K.dispatch(root,packet,hb_epoch=4096)
             self.assertTrue(result["consumed"])
             self.assertEqual(result["service_id"],"target.endpoint")
             response=K.build_endpoint_response(packet,result)

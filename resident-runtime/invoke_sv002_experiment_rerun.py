@@ -12,7 +12,7 @@ submission reuses the exact persisted frame; it never mints a second request.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import argparse
 import base64
 import hashlib
 import importlib.util
@@ -359,7 +359,11 @@ def build_packet() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     return packet, request, manifest
 
 
-def _load_or_bind_frame(state_root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+EPOCH_RETRY_ENTRYPOINT = ("resident-runtime/invoke_sv002_experiment_rerun.py (--hb-epoch, or "
+                          + K.SUPPLIED_EPOCH_ENV + ")")
+
+
+def _load_or_bind_frame(state_root: Path, hb_epoch: int) -> tuple[dict[str, Any], dict[str, Any]]:
     packet, request, manifest = build_packet()
     bound_path = state_root / "RERUN_REQUEST_BOUND.json"
     if bound_path.is_file():
@@ -376,7 +380,7 @@ def _load_or_bind_frame(state_root: Path) -> tuple[dict[str, Any], dict[str, Any
             raise RuntimeError("persisted invocation_count mismatch")
         return frame, bound
 
-    frame = K.carrier_frame(packet)
+    frame = K.carrier_frame(packet, now_ns=K.epoch_now_ns(hb_epoch))
     bound = {
         "schema": "stegverse.sv002-rerun-request-bound/v1",
         "goal_task_id": GOAL_TASK_ID,
@@ -397,14 +401,20 @@ def _load_or_bind_frame(state_root: Path) -> tuple[dict[str, Any], dict[str, Any
     return frame, bound
 
 
-def invoke_once() -> dict[str, Any]:
+def invoke_once(hb_epoch: Any = None) -> dict[str, Any]:
+    """Bind and submit the one rerun request, stamped at the supplied epoch.
+
+    An absent or invalid epoch is refused six-field before the state root is
+    created, so no frame or submission is written and no clock is read.
+    """
     bad = [name for name in HOSTED if _truthy(os.environ.get(name))]
     if bad:
         raise RuntimeError("hosted execution prohibited: " + ",".join(bad))
+    hb_epoch = K.supplied_epoch(K.caller_epoch(hb_epoch), retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
 
     state_root = _state_root()
     state_root.mkdir(parents=True, exist_ok=True)
-    frame, bound = _load_or_bind_frame(state_root)
+    frame, bound = _load_or_bind_frame(state_root, hb_epoch)
     custody = _custody_request_bound(state_root, bound)
     submission_path = state_root / "RERUN_REQUEST_SUBMISSION.json"
 
@@ -480,16 +490,27 @@ def invoke_once() -> dict[str, Any]:
         "frame_sha256": bound["frame_sha256"],
         "transport": transport,
         "transport_evidence": transport_evidence,
-        "submitted_at": datetime.now(timezone.utc).isoformat(),
+        "submitted_at": f"hb-epoch:{hb_epoch}",
         "authority_effect": "NONE_SUBMISSION_ONLY",
     }
     _write_once(submission_path, submission)
     return submission
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    # The raw text goes to the shared epoch rule.
+    parser.add_argument("--hb-epoch", default=None)
+    args = parser.parse_args(argv)
     try:
-        result = invoke_once()
+        result = invoke_once(args.hb_epoch)
+    except ValueError as exc:
+        # The six-field refusal of an absent or invalid epoch (each kernel has its own class).
+        if not isinstance(getattr(exc, "refusal", None), dict):
+            print(json.dumps(_blocked_result(exc), sort_keys=True))
+            return 2
+        print(json.dumps(exc.refusal, sort_keys=True))
+        return 1
     except Exception as exc:
         print(json.dumps(_blocked_result(exc), sort_keys=True))
         return 2

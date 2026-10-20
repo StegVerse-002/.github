@@ -1,0 +1,65 @@
+name: Resident federation cycle
+
+# The in-tree dispatcher of the resident cycle's supplied epoch
+# (activation-manifest.json hb_epoch_bindings). A workflow_dispatch run performs
+# one federation cycle at the epoch supplied with the dispatch. No clock is read
+# for it. GitHub Actions is not runtime authority here
+# (github_actions_is_runtime_authority: false): this run dispatches the cycle
+# and its epoch, and the persistent runtime substrate is pending WU-B13
+# (RUNTIME_DISPATCHER_PENDING_SUBSTRATE). There is no schedule or push trigger.
+on:
+  workflow_dispatch:
+    inputs:
+      hb_epoch:
+        description: 'supplied heartbeat epoch the cycle, its frames and its receipts carry (ASCII digits >= 32); no clock is read for it'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  cycle:
+    runs-on: ubuntu-latest
+    env:
+      HB_EPOCH: ${{ github.event.inputs.hb_epoch }}
+    steps:
+      - name: Checkout organization boundary
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # A workflow_dispatch string input cannot tell empty from absent, so both
+      # are HB_EPOCH_NOT_SUPPLIED; anything else the shared rule refuses is
+      # HB_EPOCH_INVALID. Either prints the six-field refusal and exits 1 before
+      # the cycle runs.
+      - name: Refuse an absent or invalid supplied epoch before the cycle
+        env:
+          DISPATCH_INPUTS: ${{ toJSON(github.event.inputs) }}
+        run: |
+          python3 - <<'PY'
+          import importlib.util, json, os, sys
+          spec = importlib.util.spec_from_file_location("kernel", "org-kernel/kernel.py")
+          kernel = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(kernel)
+          inputs = json.loads(os.environ.get("DISPATCH_INPUTS") or "null")
+          hb_epoch = inputs.get("hb_epoch") if isinstance(inputs, dict) else None
+          if hb_epoch == "":
+              hb_epoch = None
+          refusal = kernel.writer_epoch_refusal(
+              hb_epoch,
+              retry_entrypoint=".github/workflows/resident-federation-cycle.yml (workflow_dispatch input hb_epoch)")
+          if refusal is not None:
+              print(json.dumps(refusal, sort_keys=True))
+              sys.exit(1)
+          PY
+
+      - name: Run one federation cycle at the supplied epoch
+        run: |
+          set -euo pipefail
+          python3 resident-runtime/federation_cycle.py --hb-epoch "$HB_EPOCH" --out "$RUNNER_TEMP/latest-cycle.json"
+
+      # The in-tree dispatcher of ecosystem_control (activation-manifest.json
+      # hb_epoch_bindings). Its status heartbeat is stamped at the dispatched epoch.
+      - name: Report the resident status
+        run: python3 resident-runtime/ecosystem_control.py --hb-epoch "$HB_EPOCH" status

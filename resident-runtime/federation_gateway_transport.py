@@ -2,7 +2,6 @@
 """Outbound-only Service Gateway transport for organization federation."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import importlib.util
 import json
 import os
@@ -83,14 +82,16 @@ def fetch_frame(organization: str) -> dict[str, Any]:
     )
 
 
-def acknowledge_frame(organization: str, frame: dict[str, Any], state: str) -> dict[str, Any]:
+def acknowledge_frame(organization: str, frame: dict[str, Any], state: str, *,
+                      hb_epoch: int) -> dict[str, Any]:
+    """Acknowledge a fetched frame at the cycle's supplied epoch, never a clock."""
     ack = {
         "schema": "stegverse.org-federation-rendezvous.ack/v1",
         "organization": organization,
         "packet_id": frame["packet_id"],
         "frame_sha256": frame["frame_sha256"],
         "state": state,
-        "observed_at": datetime.now(timezone.utc).isoformat(),
+        "observed_at": f"hb-epoch:{hb_epoch}",
         "gateway_execution_authority": "NONE",
         "authority_effect": "NONE_OBSERVATION_ONLY",
     }
@@ -110,6 +111,7 @@ def publish_ecosystem_via_gateway(
     body: dict[str, Any],
     requested_action: str | None = None,
     communication_id: str | None = None,
+    now_ns: int | None = None,
 ) -> dict[str, Any]:
     registry = K.load_registry(repo_root)
     directory = K.load_federation_directory(repo_root)
@@ -126,7 +128,7 @@ def publish_ecosystem_via_gateway(
     )
     results = []
     for packet in built["packets"]:
-        frame = K.carrier_frame(packet)
+        frame = K.carrier_frame(packet, now_ns=now_ns)
         stored = submit_frame(frame)
         results.append({
             "organization": packet["destination"]["org"],
@@ -164,15 +166,25 @@ def _persist_response(repo_root: Path, packet: dict[str, Any], execution_result:
         "authority_effect": execution_result.get("authority_effect"),
     }
     path = out / name
-    if path.exists():
-        if json.loads(path.read_text()) != record:
-            raise FederationGatewayTransportError("response observation write-once collision")
-    else:
-        path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+    existing = K._existing_json(path)
+    if existing is not None and existing != record:
+        raise FederationGatewayTransportError("response observation write-once collision")
+    if existing is None:
+        K._write_json_atomic(path, record)
     return path
 
 
-def resident_gateway_cycle(repo_root: Path) -> dict[str, Any]:
+CYCLE_EPOCH_RETRY_ENTRYPOINT = ("resident-runtime/federation_gateway_transport.py::resident_gateway_cycle "
+                                "(hb_epoch=, or " + K.SUPPLIED_EPOCH_ENV + ")")
+
+
+def resident_gateway_cycle(repo_root: Path, *, hb_epoch: Any = None) -> dict[str, Any]:
+    """Consume one gateway frame and answer it at the supplied epoch.
+
+    An absent or invalid epoch is refused six-field before the gateway is read,
+    so no response frame or acknowledgement is stamped from a clock.
+    """
+    hb_epoch = K.supplied_epoch(K.caller_epoch(hb_epoch), retry_entrypoint=CYCLE_EPOCH_RETRY_ENTRYPOINT)
     registry = K.load_registry(repo_root)
     organization = registry["organization"]
     fetched = fetch_frame(organization)
@@ -188,16 +200,111 @@ def resident_gateway_cycle(repo_root: Path) -> dict[str, Any]:
     if fetched.get("state") != "FRAME_AVAILABLE":
         raise FederationGatewayTransportError("unexpected gateway fetch state")
     frame = fetched["frame"]
+    # A refused frame (CLOCK, CARRIED, invalid) is acknowledged BLOCKED so the
+    # gateway never redelivers it: it is terminal and does not stop later cycles.
+    frame_epoch, refusal = K.admit_frame(frame, hb_epoch, root=repo_root)
+    if refusal is not None and refusal.get("frame_left_pending"):
+        return _left_pending(organization, frame, refusal)
+    if refusal is not None:
+        ack = acknowledge_frame(organization, frame, "BLOCKED", hb_epoch=hb_epoch)
+        return {
+            "schema_version": "stegverse.org-federation-gateway-cycle.v1",
+            "organization": organization,
+            "state": "REFUSED_QUARANTINED",
+            "packet_id": frame.get("packet_id"),
+            "frame_sha256": frame.get("frame_sha256"),
+            "failure_code": K.FRAME_REFUSED_QUARANTINED,
+            "refusal": refusal,
+            "frames_consumed": 0,
+            "responses_emitted": 0,
+            "ack_state": ack.get("state"),
+            "gateway_execution_authority": "NONE",
+        }
     packet = K.recover_packet(frame)
-    result = K.ingest_frame(repo_root, frame)
+    try:
+        # A request whose response another request already holds is refused before it is consumed.
+        K.refuse_response_collision(repo_root, packet)
+        result = K.ingest_frame(repo_root, frame, hb_epoch=frame_epoch, explicit=False)
+    except (Exception, SystemExit) as error:
+        # B-P36o: the frame's failure is its refusal; it is acknowledged BLOCKED, not redelivered.
+        # A fault writing this repository's own state is not: the frame is left unacknowledged.
+        refusal = K.frame_failure_refusal(error)
+        if refusal.get("frame_left_pending"):
+            return _left_pending(organization, frame, refusal)
+        ack = acknowledge_frame(organization, frame, "BLOCKED", hb_epoch=hb_epoch)
+        return {
+            "schema_version": "stegverse.org-federation-gateway-cycle.v1",
+            "organization": organization,
+            "state": "REFUSED_QUARANTINED",
+            "packet_id": frame.get("packet_id"),
+            "frame_sha256": frame.get("frame_sha256"),
+            "failure_code": K.FRAME_REFUSED_QUARANTINED,
+            "refusal": refusal,
+            "frames_consumed": 0,
+            "responses_emitted": 0,
+            "ack_state": ack.get("state"),
+            "gateway_execution_authority": "NONE",
+        }
+    try:
+        return _answer(repo_root, registry, organization, frame, packet, frame_epoch, result, hb_epoch)
+    except (Exception, SystemExit) as error:
+        if K.own_state_fault(error) or isinstance(error, FederationGatewayTransportError):
+            # The crossing is recorded (a replay returns the same receipts); its answer
+            # or acknowledgement is not, so the frame is left for redelivery.
+            return _left_pending(organization, frame,
+                                 K.own_state_write_refusal(error, CYCLE_EPOCH_RETRY_ENTRYPOINT))
+        # Anything else is the frame's refusal (for one, RESPONSE_ID_COLLISION): BLOCKED, not redelivered.
+        refusal = K.frame_failure_refusal(error)
+        ack = acknowledge_frame(organization, frame, "BLOCKED", hb_epoch=hb_epoch)
+        return {
+            "schema_version": "stegverse.org-federation-gateway-cycle.v1",
+            "organization": organization,
+            "state": "REFUSED_QUARANTINED",
+            "packet_id": frame.get("packet_id"),
+            "frame_sha256": frame.get("frame_sha256"),
+            "failure_code": K.FRAME_REFUSED_QUARANTINED,
+            "refusal": refusal,
+            "frames_consumed": 0,
+            "responses_emitted": 0,
+            "ack_state": ack.get("state"),
+            "gateway_execution_authority": "NONE",
+        }
+
+
+def _left_pending(organization: str, frame: dict[str, Any], refusal: dict[str, Any]) -> dict[str, Any]:
+    """No acknowledgement, so the gateway redelivers the frame to a later cycle."""
+    return {
+        "schema_version": "stegverse.org-federation-gateway-cycle.v1",
+        "organization": organization,
+        "state": "PENDING_DISPATCH_IO_FAILED" if refusal.get("failure_code") == K.FRAME_DISPATCH_IO_FAILED
+                 else "PENDING_EPOCH_NOT_SUPPLIED",
+        "packet_id": frame.get("packet_id"),
+        "frame_sha256": frame.get("frame_sha256"),
+        "refusal": refusal,
+        "frames_consumed": 0,
+        "responses_emitted": 0,
+        "ack_state": None,
+        "gateway_execution_authority": "NONE",
+    }
+
+
+def _answer(repo_root: Path, registry: dict[str, Any], organization: str, frame: dict[str, Any],
+            packet: dict[str, Any], frame_epoch: int | None, result: dict[str, Any], hb_epoch: int) -> dict[str, Any]:
     response_emitted = 0
     response_ref = None
     if result.get("status") == "CONSUMED":
         execution = result["execution_result"]
+        # A response is stamped at the frame's epoch. A CLOCK frame is consumed
+        # but lends none, so it is answered with no response frame.
+        now_ns = None if frame_epoch is None else K.epoch_now_ns(frame_epoch)
         message_class = (packet.get("payload") or {}).get("message_class")
-        if message_class in {"ecosystem.monitor.request", "ecosystem.work.request", "ecosystem.communication"}:
+        if now_ns is None and message_class in {"ecosystem.monitor.request", "ecosystem.work.request",
+                                                "ecosystem.communication"}:
+            pass
+        elif message_class in {"ecosystem.monitor.request", "ecosystem.work.request", "ecosystem.communication"}:
             response = K.build_control_response(packet, execution)
-            response_frame = K.carrier_frame(response)
+            # Built once per request, so a redelivery re-submits the same frame (F-REPUB).
+            _, response_frame = K.response_frame_once(repo_root, packet, response, now_ns=now_ns)
             submit_frame(response_frame)
             response_emitted = 1
             response_ref = response_frame["frame_sha256"]
@@ -205,16 +312,17 @@ def resident_gateway_cycle(repo_root: Path) -> dict[str, Any]:
             _persist_response(repo_root, packet, execution)
         elif not (packet.get("payload") or {}).get("response_to_packet_id"):
             service = next((svc for svc in registry["services"] if svc.get("service_id") == packet["destination"]["service"]), None)
-            if service and service.get("endpoint_adapter"):
+            # An endpoint-adapter service stamps time, so a CLOCK frame never reaches it.
+            if service and service.get("endpoint_adapter") and now_ns is not None:
                 response = K.build_endpoint_response(packet, execution)
-                response_frame = K.carrier_frame(response)
+                _, response_frame = K.response_frame_once(repo_root, packet, response, now_ns=now_ns)
                 submit_frame(response_frame)
                 response_emitted = 1
                 response_ref = response_frame["frame_sha256"]
         ack_state = "CONSUMED"
     else:
         ack_state = "BLOCKED"
-    ack = acknowledge_frame(organization, frame, ack_state)
+    ack = acknowledge_frame(organization, frame, ack_state, hb_epoch=hb_epoch)
     return {
         "schema_version": "stegverse.org-federation-gateway-cycle.v1",
         "organization": organization,

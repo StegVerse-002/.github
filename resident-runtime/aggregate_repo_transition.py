@@ -12,17 +12,25 @@ evidence only.
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ledger_store import HEAD_KEY, RECEIPT_PREFIX, SOURCE_PREFIX, open_store, parse_locator, receipt_key, source_key  # noqa: E402
+from ledger_store import HEAD_KEY, RECEIPT_PREFIX, SOURCE_PREFIX, LedgerWriteFailed, open_store, parse_locator, receipt_key, source_key, transact  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 C = json.loads((ROOT / ".stegverse/transition-ledger/org-contract.json").read_text())
+_spec = importlib.util.spec_from_file_location("org_ledger_kernel", ROOT / "org-kernel/kernel.py")
+kernel = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(kernel)
+
+#: An append's epoch is supplied by its caller. An absent or invalid one is
+#: refused six-field FAIL_CLOSED before the store opens; no clock is read.
+EPOCH_RETRY_ENTRYPOINT = "resident-runtime/aggregate_repo_transition.py::append (hb_epoch=, or --hb-epoch)"
+OrgLedgerEpochRefused = kernel.SuppliedEpochRefused
 
 
 def canon(value):
@@ -65,12 +73,86 @@ def verify_repo(receipt):
     return claimed
 
 
+SOURCE_RECEIPT_IS_CLOCK_PROVENANCE = "SOURCE_RECEIPT_IS_CLOCK_PROVENANCE"
+
+
+def source_provenance_refusal(receipt):
+    """The six-field FAIL_CLOSED for a repository receipt whose epoch is not marked supplied, else None.
+
+    A source is retained and linked only when its ``hb_reference`` is marked
+    ``derived_from_clock`` false with no ``sampled_unix_ns``. One derived from a
+    clock, or one with no marker (a legacy receipt), is not rebound here.
+    """
+    reference = receipt.get("hb_reference")
+    if (isinstance(reference, dict) and reference.get("derived_from_clock") is False
+            and "sampled_unix_ns" not in reference):
+        return None
+    marker = reference.get("derived_from_clock", "<absent>") if isinstance(reference, dict) else "<no hb_reference>"
+    return {
+        "disposition": "FAIL_CLOSED",
+        "failure_code": SOURCE_RECEIPT_IS_CLOCK_PROVENANCE,
+        "failed_predicate": "SOURCE_RECEIPT_CARRIES_A_SUPPLIED_EPOCH",
+        "detail": "repository receipt " + str(receipt.get("receipt_sha256"))
+                  + " is not marked derived_from_clock false: " + repr(marker),
+        "required_evidence_or_repair": (
+            "a WU-B13 migration transition that rebinds the legacy repo receipt under a supplied epoch "
+            "with provenance CARRIED:LEGACY_CLOCK_RECEIPT + source sha; existing receipts are never mutated"),
+        "retry_entrypoint": "resident-runtime/aggregate_repo_transition.py::append",
+        "owning_existing_goal": kernel.HB_EPOCH_OWNING_EXISTING_GOAL,
+        "next_attempt": "append from a repository receipt written at a supplied epoch; nothing was written",
+        "derived_from_clock": False,
+        "consequence_committed": False,
+    }
+
+
 def _heartbeat(hb_epoch):
     return {
         "epoch": hb_epoch,
         "progression_dependency": "OSCILLATOR_ONLY",
         "authority_effect": "NONE",
+        "derived_from_clock": False,
     }
+
+
+def _finish_pending_head(store):
+    """Finish a HEAD publication that a torn append left undone, idempotently.
+
+    An append writes its receipt, then HEAD. If it stopped between the two and
+    its rollback did not run, exactly one receipt extends HEAD and nothing names
+    it. That receipt is verified and HEAD is published naming it, by
+    compare-and-swap, so the retried append finds it recorded and lands once.
+    Any other shape is left to `_validate_existing_head`.
+    """
+    head = store.get(HEAD_KEY)
+    named = head.get("receipt_sha256") if isinstance(head, dict) else None
+    reachable = set()
+    cursor = named
+    while isinstance(cursor, str) and cursor not in reachable:
+        record = store.get(receipt_key(cursor))
+        if not isinstance(record, dict):
+            return
+        reachable.add(cursor)
+        cursor = record.get("previous_receipt_sha256")
+    pending = store.list_prefix(RECEIPT_PREFIX) - {receipt_key(digest) for digest in reachable}
+    if len(pending) != 1:
+        return
+    key, = pending
+    try:
+        record = store.get(key)
+    except ValueError:
+        return
+    digest = record.get("receipt_sha256") if isinstance(record, dict) else None
+    if not isinstance(digest, str) or not digest.startswith("sha256:") or receipt_key(digest) != key:
+        return
+    if sha({k: v for k, v in record.items() if k != "receipt_sha256"}) != digest:
+        return
+    if record.get("previous_receipt_sha256") != named:
+        return
+    store.compare_and_swap(HEAD_KEY, head, {
+        "organization": C["organization"],
+        "receipt_sha256": digest,
+        "receipt_path": store.locator(key),
+    })
 
 
 def _validate_existing_head(store):
@@ -128,14 +210,24 @@ def _recorded(store, head, source_digest):
 def append(source_receipt, org_transition_class, predecessor_state, successor_state,
            boundary_evidence=None, authority_effect="NONE", hb_epoch=None, idempotent=True, store=None):
     """Append the organization receipt for one repository receipt. A replay returns the recorded one."""
+    hb_epoch = kernel.supplied_epoch(hb_epoch, retry_entrypoint=EPOCH_RETRY_ENTRYPOINT)
     claimed = verify_repo(source_receipt)
+    refusal = source_provenance_refusal(source_receipt)
+    if refusal is not None:
+        raise OrgLedgerEpochRefused(refusal)
     target = store or open_store(ledger_root())
     target.initialize()
-    observed = f"hb-epoch:{hb_epoch}" if hb_epoch is not None else datetime.now(timezone.utc).isoformat()
+    observed = f"hb-epoch:{hb_epoch}"
     retained = {source_key(claimed): source_receipt}
     for _attempt in range(128):
+        _finish_pending_head(target)
         expected_head = target.get(HEAD_KEY)
-        _validate_existing_head(target)
+        try:
+            _validate_existing_head(target)
+        except ValueError as exc:
+            # A torn or damaged store is this ledger's own state, not a defect of
+            # the receipt being appended: the caller retries once it is repaired.
+            raise LedgerWriteFailed("LEDGER_TORN_STORE_RECOVERY_REQUIRED", str(exc)) from exc
         if idempotent:
             prior = _recorded(target, expected_head, claimed)
             if prior is not None:
@@ -167,12 +259,14 @@ def append(source_receipt, org_transition_class, predecessor_state, successor_st
             "receipt_sha256": digest,
             "receipt_path": target.locator(key),
         }
-        if target.append_transaction(key, record, expected_head, new_head, immutable=retained):
+        if transact(target, key, record, expected_head, new_head, immutable=retained):
             return record
-    raise SystemExit("ORG_LEDGER_APPEND_CONTENTION_EXHAUSTED")
+    # Every comparison was lost and nothing was published: a fault in this
+    # ledger's own state, which the caller retries, not a refusal of the receipt.
+    raise LedgerWriteFailed("LEDGER_APPEND_LOST_COMPARISON", "ORG_LEDGER_APPEND_CONTENTION_EXHAUSTED")
 
 
-def main():
+def _main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--repo-receipt", required=True)
     parser.add_argument("--org-transition-class", default="REPO_STATE_PROPAGATION")
@@ -180,14 +274,33 @@ def main():
     parser.add_argument("--successor-org-state-sha256", required=True)
     parser.add_argument("--boundary-evidence-json", default="{}")
     parser.add_argument("--authority-effect", default="NONE")
-    parser.add_argument("--hb-epoch", type=int, default=None)
+    # The raw text goes to the shared epoch rule: argparse's int() would take
+    # "+33", " 33" or fullwidth digits as 33.
+    parser.add_argument("--hb-epoch", default=None)
     args = parser.parse_args()
-    record = append(
-        load(args.repo_receipt), args.org_transition_class, args.predecessor_org_state_sha256,
-        args.successor_org_state_sha256, json.loads(args.boundary_evidence_json),
-        args.authority_effect, hb_epoch=args.hb_epoch)
+    try:
+        record = append(
+            kernel.read_json_input(args.repo_receipt, argument="--repo-receipt",
+                                   retry_entrypoint=EPOCH_RETRY_ENTRYPOINT),
+            args.org_transition_class, args.predecessor_org_state_sha256, args.successor_org_state_sha256,
+            kernel.parse_json_input(args.boundary_evidence_json, argument="--boundary-evidence-json",
+                                    retry_entrypoint=EPOCH_RETRY_ENTRYPOINT),
+            args.authority_effect, hb_epoch=args.hb_epoch)
+    except OrgLedgerEpochRefused as exc:
+        print(json.dumps(exc.refusal, sort_keys=True))
+        raise SystemExit(1)
     print(json.dumps(record, sort_keys=True))
 
 
+def main():
+    """Append one organization receipt from the command line.
+
+    F-WRITER-TRACE: it never ends in a traceback. A fault writing this
+    repository's own state is a six-field, non-terminal record (exit status
+    kernel.OWN_STATE_WRITE_FAULT_EXIT); bad input is a six-field refusal.
+    """
+    return kernel.run_writer_cli(_main, EPOCH_RETRY_ENTRYPOINT)
+
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

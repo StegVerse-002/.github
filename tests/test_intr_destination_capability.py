@@ -20,6 +20,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -305,7 +306,7 @@ class AddressedAndClosedTests(RedirectedLedgers):
     def setUp(self):
         super().setUp()
 
-    def publish(self, payload, service, packet_id, origin=PEER):
+    def publish(self, payload, service, packet_id, origin=PEER, *, now_ns=kernel.HB_ANCHOR_UNIX_NS):
         packet = kernel.build_packet(
             origin_org=origin,
             origin_service=kernel.organization_slug(origin) + "." + PROFILE_ID,
@@ -314,7 +315,7 @@ class AddressedAndClosedTests(RedirectedLedgers):
             transition_reference="intr:transition:" + packet_id,
             authority_effect="NONE", packet_id=packet_id)
         # The far side here is fabricated. Only the frame is written.
-        kernel.publish_packet(packet, root=self.mesh, now_ns=kernel.HB_ANCHOR_UNIX_NS)
+        kernel.publish_packet(packet, root=self.mesh, now_ns=now_ns)
         return packet
 
     def consume(self):
@@ -331,9 +332,37 @@ class AddressedAndClosedTests(RedirectedLedgers):
                 frames.append(frame)
         return frames
 
+    def test_a_peer_frame_without_a_supplied_epoch_is_refused_before_any_receipt(self):
+        # Stamped at the clock: the frame carries no supplied epoch either.
+        self.publish(diagnostic("unepoched-diagnostic"), ADDRESS, "unepoched-diagnostic", now_ns=None)
+        # The frame's heartbeat is CLOCK and lends no epoch. With none from the
+        # caller the frame is left pending, reported rather than raised; with
+        # the caller's, it is consumed at that epoch.
+        for supplied in (None, "32"):
+            with mock.patch.dict(os.environ):
+                os.environ.pop("STEGVERSE_HB_EPOCH", None)
+                if supplied is not None:
+                    os.environ["STEGVERSE_HB_EPOCH"] = supplied
+                result, = self.consume()
+            if supplied is None:
+                # §Q: left pending, not refused for good: no epoch is the cycle's lack.
+                self.assertEqual(result["result"]["status"], "PENDING")
+                refusal = result["result"]["refusal"]
+                self.assertEqual(refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+                self.assertIs(refusal["derived_from_clock"], False)
+                self.assertFalse(Path(os.environ["STEGVERSE_REPO_LEDGER_ROOT"]).exists())
+                self.assertFalse(Path(os.environ["STEGVERSE_ORG_LEDGER_ROOT"]).exists())
+            else:
+                # NARROW S1: a CLOCK frame lends no epoch; the caller's supplied one is used.
+                self.assertEqual(result["result"]["status"], "CONSUMED")
+                for receipt in self.receipts("STEGVERSE_REPO_LEDGER_ROOT", "stegverse.repo-transition-receipt/v1"):
+                    self.assertEqual(receipt["hb_reference"]["epoch"], 32)
+
     def test_a_peer_frame_at_the_address_is_received_and_receipted(self):
         self.publish(diagnostic("addressed-diagnostic"), ADDRESS, "addressed-diagnostic")
-        results = self.consume()
+        # The caller supplies the epoch; the frame's own heartbeat is not it.
+        with mock.patch.dict(os.environ, {"STEGVERSE_HB_EPOCH": "32"}):
+            results = self.consume()
         self.assertEqual(len(results), 1)
         execution = results[0]["result"]["execution_result"]
         self.assertEqual(results[0]["result"]["status"], "CONSUMED")
@@ -360,9 +389,13 @@ class AddressedAndClosedTests(RedirectedLedgers):
 
     def test_a_manifest_addressed_to_this_capability_is_not_a_diagnostic(self):
         self.publish({"manifest": {"probe": True}}, ADDRESS, "not-a-diagnostic")
-        with self.assertRaises(ValueError) as refused:
-            self.consume()
-        self.assertIn("SUBMISSION_DECLARES_A_RESPONDED_REQUEST_CLASS", str(refused.exception))
+        # The refusal is that frame's (B-P36o), reported rather than raised.
+        with mock.patch.dict(os.environ, {"STEGVERSE_HB_EPOCH": "32"}):
+            result, = self.consume()
+        self.assertEqual(result["result"]["status"], "REFUSED")
+        refusal = result["result"]["refusal"]
+        self.assertEqual(refusal["failure_code"], "FRAME_INGEST_FAILED")
+        self.assertIn("SUBMISSION_DECLARES_A_RESPONDED_REQUEST_CLASS", refusal["detail"])
         self.assertEqual(self.receipts(
             "STEGVERSE_REPO_LEDGER_ROOT", "stegverse.repo-transition-receipt/v1", OPERATION_ID), [])
 
@@ -409,6 +442,16 @@ class AddressedAndClosedTests(RedirectedLedgers):
         kernel.publish_packet(response, root=self.mesh,
                               now_ns=kernel.HB_ANCHOR_UNIX_NS + 2 * kernel.HB_PERIOD_NS)
         return chain[-1]
+
+    def test_an_emission_without_a_supplied_epoch_publishes_nothing(self):
+        with self.assertRaises(ValueError) as refused:
+            egress.emit(PEER, diagnostic("unepoched-emission"), standing=STANDING,
+                        capability=PROFILE_ID, mesh_root=self.mesh)
+        self.assertEqual(refused.exception.refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+        self.assertIn("organization_egress_boundary.py::emit",
+                      refused.exception.refusal["retry_entrypoint"])
+        self.assertEqual(self.frames_to(PEER), [])
+        self.assertFalse(Path(os.environ["STEGVERSE_REPO_LEDGER_ROOT"]).exists())
 
     def test_a_diagnostic_crossing_closes_only_when_the_far_side_answers(self):
         emitted = egress.emit(PEER, diagnostic("closable-diagnostic"), standing=STANDING,
