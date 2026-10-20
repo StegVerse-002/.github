@@ -392,9 +392,10 @@ class AnEpochIsForwardedOnlyAsSupplied(unittest.TestCase):
                      "reconstruction": {"terminal_receipt_id": chain[-1]}})
         kernel.publish_packet(response, root=self.mesh,
                               now_ns=kernel.HB_ANCHOR_UNIX_NS + 2 * kernel.HB_PERIOD_NS)
-        with self.assertRaises(ValueError) as refused:
-            self.egress.close(PEER, packet["packet_id"], "absent-close", mesh_root=self.mesh)
-        self.assertEqual(refused.exception.refusal["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+        refused = self.egress.close(PEER, packet["packet_id"], "absent-close", mesh_root=self.mesh)
+        self.assertEqual(refused["disposition"], "FAIL_CLOSED")
+        self.assertEqual(refused["failure_code"], "HB_EPOCH_NOT_SUPPLIED")
+        self.assertIs(refused["closure_recorded"], False)
         self.assertEqual(len(self.receipts()), len(before))
         self.assertOnlySupplied(SUPPLIED)
 
