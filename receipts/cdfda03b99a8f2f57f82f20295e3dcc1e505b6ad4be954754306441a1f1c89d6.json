@@ -1,0 +1,33 @@
+{
+  "authority_effect": "NONE",
+  "boundary_evidence": {
+    "communication_id": "intr-path-v1:Admissible-Existence->StegVerse-002",
+    "disposition": "ALLOW",
+    "operation": "ORGANIZATION_INTR_DESTINATION_INGRESS",
+    "path_id": "Admissible-Existence->StegVerse-002:intr-destination",
+    "profile_id": "intr-destination",
+    "source_organization_receipt_sha256": "sha256:6c05a3d5cac15537f1795a888d11f702e8afdac586622b22fb2bcbfbd78d91c0",
+    "source_repository": "Admissible-Existence/.github",
+    "source_repository_receipt_sha256": "sha256:32d735b89d30686ab373bc6073dda76b447adf11d4e96b6d3d698e7db7d4bb6b"
+  },
+  "hb_reference": {
+    "authority_effect": "NONE",
+    "derived_from_clock": false,
+    "epoch": 469411750,
+    "progression_dependency": "OSCILLATOR_ONLY"
+  },
+  "observed_at": "hb-epoch:469411750",
+  "org_transition_class": "REPO_STATE_PROPAGATION",
+  "organization": "StegVerse-002",
+  "predecessor_org_state_sha256": "sha256:6113acfd45a0caab28aca95df1191c7f37f52af7e749f82bde841d4c86afc009",
+  "previous_receipt_sha256": "sha256:4d2d6b0e9445fcd1970f9f5f7da4eef0564ddf46049bedfa1ffbb748a925f93c",
+  "receipt_sha256": "sha256:cdfda03b99a8f2f57f82f20295e3dcc1e505b6ad4be954754306441a1f1c89d6",
+  "repo_receipt_sha256": "sha256:c96a9fab22bf43eeb3d0fb9435b81c64b584a30dba2b4233b2c5a0c5eade271a",
+  "repo_transition_id": "INTR_MESH_PATH_INGRESS:Admissible-Existence->StegVerse-002:intr-destination@intr-path-v1:Admissible-Existence->StegVerse-002",
+  "schema": "stegverse.organization-transition-receipt/v1",
+  "source_receipt_schema": "stegverse.repo-transition-receipt/v1",
+  "source_repository": "StegVerse-002/.github",
+  "source_transition_id": "INTR_MESH_PATH_INGRESS:Admissible-Existence->StegVerse-002:intr-destination@intr-path-v1:Admissible-Existence->StegVerse-002",
+  "source_transition_sha256": "sha256:c96a9fab22bf43eeb3d0fb9435b81c64b584a30dba2b4233b2c5a0c5eade271a",
+  "successor_org_state_sha256": "sha256:fcbdd444c0592a4053ab11cb64dea57d6bb837697c1dd71c49de6eb9fe189389"
+}
