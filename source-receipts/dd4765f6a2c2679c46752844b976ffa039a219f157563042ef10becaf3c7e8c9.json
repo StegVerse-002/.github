@@ -1,0 +1,45 @@
+{
+  "authority_effect": "NONE",
+  "evidence": {
+    "addressed_service": "stegverse-002.intr-destination",
+    "communication_id": "intr-path-v1:Triad-Test->StegVerse-002",
+    "disposition": "ALLOW",
+    "message": {
+      "body": {
+        "path_id": "Triad-Test->StegVerse-002:intr-destination",
+        "schema": "stegverse.org-intr-destination-diagnostic/v1",
+        "transfer_commit": "d22d0dca97d5f33e1e7101dca13fcf5d0422145f"
+      },
+      "communication_id": "intr-path-v1:Triad-Test->StegVerse-002",
+      "message_class": "ecosystem.communication"
+    },
+    "message_sha256": "sha256:f4b70f36f6fc06c8d584e3770ad3b1028080997f6e396ad4a0485665b90e6e41",
+    "path_id": "Triad-Test->StegVerse-002:intr-destination",
+    "payload_sha256": "sha256:92a13896a6680bdca4b809e24836a49fbd5c96bfe1f301fec11b88d43a24ac95",
+    "repository": "StegVerse-002/.github",
+    "schema": "stegverse.intr-path-ingress-evidence/v1",
+    "source_inclusion": {
+      "source_ledger_tip": "8e4ef3ba2fa3de60a258480b72c3ff6ab5fdbfe7",
+      "state": "VERIFIED_BY_ANONYMOUS_PUBLIC_LEDGER_READ",
+      "tvc_read_receipt": null
+    },
+    "source_organization_receipt_sha256": "sha256:c36af42b0ddf2fa911253788310beeaef49f5175b09d00c6dd0a9b10cced8399",
+    "source_repository": "Triad-Test/.github",
+    "source_repository_receipt_sha256": "sha256:272f0db2379c9ba4c7cd5f97e586d4a1f59c5892d22547ef04e59acc7f678347"
+  },
+  "hb_reference": {
+    "authority_effect": "NONE",
+    "derived_from_clock": false,
+    "epoch": 469411750,
+    "progression_dependency": "OSCILLATOR_ONLY"
+  },
+  "observed_at": "hb-epoch:469411750",
+  "predecessor_state_sha256": "sha256:92a13896a6680bdca4b809e24836a49fbd5c96bfe1f301fec11b88d43a24ac95",
+  "previous_receipt_sha256": "sha256:260a67bcc5ef337b3f44ccdb609f8b0d4fb5ab013ac27ea1521d7efec90e6951",
+  "receipt_sha256": "sha256:dd4765f6a2c2679c46752844b976ffa039a219f157563042ef10becaf3c7e8c9",
+  "repository": "StegVerse-002/.github",
+  "schema": "stegverse.repo-transition-receipt/v1",
+  "successor_state_sha256": "sha256:5631f4d42494cd24f7e10b0324d3bfa7a13072b81e97c0c90198603029b2e645",
+  "transition_class": "INTR_MESH_PATH_INGRESS",
+  "transition_id": "INTR_MESH_PATH_INGRESS:Triad-Test->StegVerse-002:intr-destination@intr-path-v1:Triad-Test->StegVerse-002"
+}
