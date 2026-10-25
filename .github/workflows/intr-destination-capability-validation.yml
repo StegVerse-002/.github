@@ -49,7 +49,6 @@ on:
       - 'resident-runtime/federation_gateway_transport.py'
       - 'docs/INTR_DESTINATION_CAPABILITY_MIRROR_HANDOFF.md'
       - '.github/workflows/intr-destination-capability-validation.yml'
-  workflow_dispatch:
 
 permissions:
   contents: read
