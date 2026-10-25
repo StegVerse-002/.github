@@ -22,7 +22,7 @@ on:
 permissions:
   contents: read
 
-# ORGANIZATION_LEDGER_LOCK: one appender at a time, shared with organization-ledger-transition.yml.
+# ORGANIZATION_LEDGER_LOCK: one appender at a time (organization-ledger-transition.yml no longer appends).
 concurrency:
   group: organization-ledger
   cancel-in-progress: false
@@ -46,8 +46,7 @@ jobs:
   #
   # Writer only. The PR-facing checks are
   # .github/workflows/organization-ledger-merge-transfer-validation.yml.
-  # ORGANIZATION_LEDGER_LOCK: one appender at a time, shared with
-  # organization-ledger-transition.yml. The fast-forward push is the
+  # ORGANIZATION_LEDGER_LOCK: one appender at a time. The fast-forward push is the
   # compare-and-swap against the published ref.
   merge-transfer:
     runs-on: ubuntu-latest

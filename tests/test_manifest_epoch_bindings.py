@@ -19,7 +19,10 @@ MANIFESTS = (ACTIVATION, INTERLOCK, "org-runtime/activation.json", "org-boundary
              "resident-runtime/self-characterization/stegverse-002.json")
 NEEDS_EPOCH = re.compile(r"supplied_epoch\(|writer_epoch_refusal\(|SUPPLIED_EPOCH_ENV|consume_and_respond\(|ingest_frame\(")
 PY_PATH = re.compile(r"^([A-Za-z0-9_./-]+\.py)(?:::[A-Za-z_]+)?$")
-KINDS = {"argument", "frame_heartbeat", "dispatch_input"}
+KINDS = {"argument", "frame_heartbeat", "dispatch_input", "ledger_head"}
+#: The push-only writer supplies the epoch from the committed packet, then the ledger head (no dispatch, no clock).
+LEDGER_HEAD_CARRIER = "COMMITTED_EPOCH_PACKET_THEN_LEDGER_HEAD"
+EPOCH_PACKET = ".stegverse/organization-ledger/epoch-packet.json"
 WORKFLOWS = ROOT / ".github" / "workflows"
 
 
@@ -240,6 +243,13 @@ class ManifestEpochBindings(unittest.TestCase):
                     self.assertIn("hb_epoch=consuming_epoch(frame,hb_epoch", source_of(supplier))
                 elif kind == "dispatch_input":
                     self.assertEqual(supplier, binding["dispatcher"])
+                elif kind == "ledger_head":
+                    self.assertEqual(supplier, EPOCH_PACKET)
+                    self.assertEqual(binding["epoch_carrier"], LEDGER_HEAD_CARRIER)
+                    packet = load(EPOCH_PACKET)
+                    self.assertIsInstance(packet["hb_epoch"], int)
+                    self.assertNotIsInstance(packet["hb_epoch"], bool)
+                    self.assertGreaterEqual(packet["hb_epoch"], 32)
 
     def test_each_binding_has_an_in_tree_workflow_dispatch_that_supplies_the_epoch(self):
         """No host outside the tree binds an epoch: each binding names an in-repo dispatcher."""
@@ -249,6 +259,21 @@ class ManifestEpochBindings(unittest.TestCase):
                 self.assertTrue(workflow_path.startswith(".github/workflows/"), workflow_path)
                 workflow = source_of(workflow_path)
                 on = workflow.split("\njobs:")[0]
+                if binding.get("epoch_carrier") == LEDGER_HEAD_CARRIER:
+                    # The dispatched self-closure that supplied this epoch is retired (Rigel's rule, 2026-10-25:
+                    # no InTr hop inside one organization). The push-only writer supplies it from the committed
+                    # packet before its first append, then from the ledger head; no dispatch input, no clock.
+                    triggers = "\n".join(line for line in on.splitlines() if not line.lstrip().startswith("#"))
+                    self.assertNotIn("workflow_dispatch", triggers)
+                    self.assertNotRegex(triggers, r"\n\s*schedule:")
+                    self.assertRegex(triggers, r"\n\s*push:")
+                    supply = workflow.index("python3 resident-runtime/organization_ledger_epoch.py append")
+                    self.assertLess(supply, workflow.index("python3 resident-runtime/merge_transfer.py append"))
+                    # Its default packet is the committed one this binding names.
+                    self.assertIn(EPOCH_PACKET, source_of("resident-runtime/organization_ledger_epoch.py"))
+                    self.assertTrue((ROOT / EPOCH_PACKET).is_file())
+                    self.assertNotIn("EnvironmentFile", workflow)
+                    continue
                 self.assertRegex(on, r"workflow_dispatch:\s*\n\s*inputs:[\s\S]*\n\s+hb_epoch:\s*\n[\s\S]*?required: true")
                 self.assertNotRegex(on, r"\n\s*schedule:")
                 # The "" -> NOT_SUPPLIED gate runs the shared rule before anything else.
