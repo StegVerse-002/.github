@@ -1,0 +1,15 @@
+{
+  "schema": "stegverse.organization-ledger-supplied-epoch-packet/v1",
+  "organization": "StegVerse-002",
+  "packet_id": "stegverse-002-organization-ledger-supplied-epoch-001",
+  "hb_epoch": 469411750,
+  "epoch_source": {
+    "organization": "StegVerse-Labs",
+    "ledger_repository": "StegVerse-Labs/.github",
+    "ledger_ref": "refs/stegverse/organization-ledger",
+    "ledger_tip": "89067f0d8da1e6b1aef33ab79074743cce1b743f",
+    "head_receipt_sha256": "sha256:bcf489ab22ead0734ffeef3d17702cd2f08043e699a8351bf62c5f5be718cc15",
+    "observed": "hb_reference.epoch 469411750, derived_from_clock false, read anonymously from the public ledger ref"
+  },
+  "rule": "Committed carrier of a supplied hb_epoch for an organization ledger whose head carries none. A push to main that lands it appends one organization ledger transition (ORGANIZATION_LEDGER_SUPPLIED_EPOCH) at this epoch, before the main-merge transfer. It is not an InTr hop: no address, no peer, no communication. When the head already carries a supplied epoch, nothing is appended."
+}
