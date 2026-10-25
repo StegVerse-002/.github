@@ -72,22 +72,17 @@ class PublishedRefBindingTests(unittest.TestCase):
         self.assertTrue(_published_ref_absent())
 
     def test_the_workflow_appends_pushes_the_published_ref_and_reads_it_back(self):
+        # Re-purposed (base id kept) under Rigel's rule (2026-10-25): InTr paths exist only between distinct
+        # organizations, so the dispatch self-closure (an InTr hop inside this organization) is retired. This
+        # workflow validates only: it has no dispatch, appends nothing and pushes nothing.
         workflow = (ROOT / ".github/workflows/organization-ledger-transition.yml").read_text()
-        self.assertIn("workflow_dispatch", workflow)
-        self.assertIn("--self-closure", workflow)
-        self.assertIn('export STEGVERSE_ORG_LEDGER_ROOT="git+$GITHUB_WORKSPACE#$LEDGER_REF"', workflow)
-        self.assertIn(
-            'export STEGVERSE_REPO_LEDGER_ROOT="git+$GITHUB_WORKSPACE#$LEDGER_REF:$REPO_LEDGER_NAMESPACE"',
-            workflow)
-        self.assertIn('git push origin "$LEDGER_REF:$LEDGER_REF"', workflow)
-        self.assertEqual(workflow.count("git push origin"), 1)
-        self.assertIn("--repository-namespace", workflow)
-        self.assertIn("--closure-result", workflow)
-        self.assertIn("communication_id", workflow)
-        self.assertNotIn("refs/stegverse/repository-ledger", workflow)
-        self.assertNotIn("runner.temp }}/repo-ledger", workflow)
-        self.assertNotIn("grant", workflow.lower())
-        self.assertNotIn("capability_destination_bindings", workflow)
+        self.assertNotIn("workflow_dispatch", workflow)
+        self.assertNotIn("--self-closure", workflow)
+        self.assertNotIn("--closure-result", workflow)
+        self.assertNotIn("git push", workflow)
+        self.assertNotIn("contents: write", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertIn("tests.test_organization_ledger_published_ref", workflow)
 
     def test_federation_and_the_boundary_copy_are_not_this_change(self):
         federation = (ROOT / "org-boundary/registry/federation.json").read_text(encoding="utf-8")
@@ -181,42 +176,39 @@ class DiagnosticSelfClosureTests(_TemporaryRef):
 
 WORKFLOW = ROOT / ".github/workflows/organization-ledger-transition.yml"
 EPOCH_GATE_STEP = "      - name: Refuse an absent or invalid supplied epoch before any append\n"
+EPOCH_RETRY = ".github/workflows/organization-ledger-writer.yml (supplied epoch)"
 SIX_FIELDS = ("failure_code", "failed_predicate", "required_evidence_or_repair",
               "retry_entrypoint", "owning_existing_goal", "next_attempt")
 _ABSENT = object()
 
 
-def _epoch_gate_script():
-    """The gate step's own ``run: |`` block, dedented as the runner sees it."""
-    lines = WORKFLOW.read_text(encoding="utf-8").split(EPOCH_GATE_STEP, 1)[1].splitlines()
-    start = next(i for i, line in enumerate(lines) if line.strip() == "run: |") + 1
-    indent = len(lines[start]) - len(lines[start].lstrip())
-    body = []
-    for line in lines[start:]:
-        if line.strip() and len(line) - len(line.lstrip()) < indent:
-            break
-        body.append(line[indent:])
-    return "\n".join(body) + "\n"
+def _kernel():
+    spec = importlib.util.spec_from_file_location("kernel_epoch_gate", ROOT / "org-kernel/kernel.py")
+    kernel = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(kernel)
+    return kernel
 
 
 class TheWorkflowEpochGateIsTheKernelRefusal(unittest.TestCase):
-    """The dispatch hb_epoch is judged by the kernel's writer rule before any append."""
+    """The supplied epoch is judged by the kernel's writer rule before any append.
+
+    The dispatch gate step left with the retired self-closure (Rigel's rule, 2026-10-25: no InTr hop inside
+    one organization). The writer rule it ran is judged here directly, with the same cases.
+    """
 
     def run_gate(self, hb_epoch):
-        inputs = {"communication_id": ""}
-        if hb_epoch is not _ABSENT:
-            inputs["hb_epoch"] = hb_epoch
-        env = {key: value for key, value in os.environ.items() if key != "STEGVERSE_HB_EPOCH"}
-        env["DISPATCH_INPUTS"] = json.dumps(inputs)
-        return subprocess.run(["bash", "-e", "-c", _epoch_gate_script()], cwd=ROOT, env=env,
-                              capture_output=True, text=True, check=False)
+        refusal = _kernel().writer_epoch_refusal(None if hb_epoch is _ABSENT or hb_epoch == "" else hb_epoch,
+                                                 retry_entrypoint=EPOCH_RETRY)
+        return subprocess.CompletedProcess([], 0 if refusal is None else 1,
+                                           "" if refusal is None else json.dumps(refusal, sort_keys=True), "")
 
     def test_the_inline_gate_is_gone(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("DISPATCH_HB_EPOCH_INVALID", workflow)
         self.assertNotIn('case "$HB_EPOCH"', workflow)
-        self.assertIn("kernel.writer_epoch_refusal(", _epoch_gate_script())
-        self.assertLess(workflow.index(EPOCH_GATE_STEP), workflow.index("--self-closure"))
+        self.assertNotIn(EPOCH_GATE_STEP, workflow)
+        self.assertNotIn("--self-closure", workflow)
+        self.assertTrue(callable(_kernel().writer_epoch_refusal))
 
     def test_absent_and_invalid_epochs_print_the_six_field_refusal(self):
         # A dispatch string input cannot tell empty from absent: both are not supplied.
@@ -233,7 +225,7 @@ class TheWorkflowEpochGateIsTheKernelRefusal(unittest.TestCase):
                 self.assertEqual(refusal["failure_code"], code)
                 for field in SIX_FIELDS:
                     self.assertTrue(refusal.get(field), field)
-                self.assertIn("organization-ledger-transition.yml", refusal["retry_entrypoint"])
+                self.assertIn("organization-ledger-writer.yml", refusal["retry_entrypoint"])
                 self.assertFalse(refusal["consequence_committed"])
                 self.assertFalse(refusal["derived_from_clock"])
 
