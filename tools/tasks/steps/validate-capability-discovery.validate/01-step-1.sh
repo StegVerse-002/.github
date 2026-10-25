@@ -1,0 +1,1 @@
+python3 -m py_compile resident-runtime/capability_discovery_surface.py org-boundary/runtime/process_boundary.py

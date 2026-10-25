@@ -1,0 +1,1 @@
+python3 -m unittest -v tests.test_self_characterization_hierarchical_ledger
