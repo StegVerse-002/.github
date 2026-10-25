@@ -1,0 +1,42 @@
+{
+  "authority_effect": "NONE",
+  "evidence": {
+    "capability": "intr-destination",
+    "communication_id": "intr-path-v1:StegVerse-002->Triad-Test",
+    "destination_address": "triad-test.intr-destination",
+    "destination_organization": "Triad-Test",
+    "disposition": "ALLOW",
+    "merge_transfer_organization_receipt_sha256": "sha256:db3a862c1c89bcc5233509d7d5a20808a598baf4246f5adf569147e8dcba6992",
+    "message": {
+      "body": {
+        "path_id": "StegVerse-002->Triad-Test:intr-destination",
+        "schema": "stegverse.org-intr-destination-diagnostic/v1",
+        "transfer_commit": "6b1a1b9f9e2de9099dc00e4c936eb9c52a211eb5"
+      },
+      "communication_id": "intr-path-v1:StegVerse-002->Triad-Test",
+      "message_class": "ecosystem.communication"
+    },
+    "message_sha256": "sha256:e556e8b960c07f09ea80eeef936fc8d6652d90bcbc983fdc4431f87a7f8853b1",
+    "path_id": "StegVerse-002->Triad-Test:intr-destination",
+    "payload_sha256": "sha256:0f984d128c8fdcc051362a023ad57718e4ee97a4c7dbe60c721b85cbb45f1175",
+    "repository": "StegVerse-002/.github",
+    "schema": "stegverse.intr-path-transfer-evidence/v1",
+    "source_organization": "StegVerse-002",
+    "transfer_commit": "6b1a1b9f9e2de9099dc00e4c936eb9c52a211eb5"
+  },
+  "hb_reference": {
+    "authority_effect": "NONE",
+    "derived_from_clock": false,
+    "epoch": 469411750,
+    "progression_dependency": "OSCILLATOR_ONLY"
+  },
+  "observed_at": "hb-epoch:469411750",
+  "predecessor_state_sha256": "sha256:0f984d128c8fdcc051362a023ad57718e4ee97a4c7dbe60c721b85cbb45f1175",
+  "previous_receipt_sha256": "sha256:bd4eeb69e6d9efcac49169280a74f8f417d9ecbcae5bca821fbd4ab7035035fd",
+  "receipt_sha256": "sha256:ca8f96568fba2c7854fdcbff9ab2b4b3381eda02483532f6c96894a1ddf27423",
+  "repository": "StegVerse-002/.github",
+  "schema": "stegverse.repo-transition-receipt/v1",
+  "successor_state_sha256": "sha256:6058153750d04b6f201acdf574f95c6f9f811677061d412efac8311ef9b4f879",
+  "transition_class": "INTR_MESH_PATH_TRANSFER",
+  "transition_id": "INTR_MESH_PATH_TRANSFER:StegVerse-002->Triad-Test:intr-destination@intr-path-v1:StegVerse-002->Triad-Test"
+}
