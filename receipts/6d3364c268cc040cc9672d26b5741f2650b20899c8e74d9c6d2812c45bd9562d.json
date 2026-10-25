@@ -1,0 +1,38 @@
+{
+  "authority_effect": "NONE",
+  "boundary_evidence": {
+    "communication_id": null,
+    "disposition": "ALLOW",
+    "hb_epoch_source": {
+      "head_receipt_sha256": "sha256:bcf489ab22ead0734ffeef3d17702cd2f08043e699a8351bf62c5f5be718cc15",
+      "ledger_ref": "refs/stegverse/organization-ledger",
+      "ledger_repository": "StegVerse-Labs/.github",
+      "ledger_tip": "89067f0d8da1e6b1aef33ab79074743cce1b743f",
+      "observed": "hb_reference.epoch 469411750, derived_from_clock false, read anonymously from the public ledger ref",
+      "organization": "StegVerse-Labs"
+    },
+    "operation": "ORGANIZATION_LEDGER_SUPPLIED_EPOCH",
+    "packet_id": "stegverse-002-organization-ledger-supplied-epoch-001",
+    "profile_id": "organization-ledger"
+  },
+  "hb_reference": {
+    "authority_effect": "NONE",
+    "derived_from_clock": false,
+    "epoch": 469411750,
+    "progression_dependency": "OSCILLATOR_ONLY"
+  },
+  "observed_at": "hb-epoch:469411750",
+  "org_transition_class": "REPO_STATE_PROPAGATION",
+  "organization": "StegVerse-002",
+  "predecessor_org_state_sha256": "sha256:0aa91b724ba4900c5776eb261eb21c48028d70eaac72c57a8436e87863274d35",
+  "previous_receipt_sha256": "sha256:33a009047b2a83cd1de065d2d41c6aada55e13916b88d6a3531ff94ae24e7546",
+  "receipt_sha256": "sha256:6d3364c268cc040cc9672d26b5741f2650b20899c8e74d9c6d2812c45bd9562d",
+  "repo_receipt_sha256": "sha256:af3259cab53fae86863cce3c217f8618d7d8be19e99031073fde7769c69225ea",
+  "repo_transition_id": "ORGANIZATION_LEDGER_SUPPLIED_EPOCH:stegverse-002-organization-ledger-supplied-epoch-001",
+  "schema": "stegverse.organization-transition-receipt/v1",
+  "source_receipt_schema": "stegverse.repo-transition-receipt/v1",
+  "source_repository": "StegVerse-002/.github",
+  "source_transition_id": "ORGANIZATION_LEDGER_SUPPLIED_EPOCH:stegverse-002-organization-ledger-supplied-epoch-001",
+  "source_transition_sha256": "sha256:af3259cab53fae86863cce3c217f8618d7d8be19e99031073fde7769c69225ea",
+  "successor_org_state_sha256": "sha256:0c5ec246b2a05b33a63eac56df5436c48a31e06cbefb59dd652cfc1e00c2ab7d"
+}
