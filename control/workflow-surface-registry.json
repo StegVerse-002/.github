@@ -1,0 +1,179 @@
+{
+  "schema": "stegverse.workflow-surface-registry/v1",
+  "goal_id": "G17-WORKFLOW-SURFACE-MINIMIZATION",
+  "repository": "StegVerse-002/.github",
+  "policy_issue": "StegVerse-Labs/.github#167, #168; StegVerse-org/.github#166",
+  "preferred_repository_workflow_count_max": 2,
+  "exception_repository_workflow_count_max": 3,
+  "credential_authority": "the SKAP Vault inside KV is the only PII and credential store for every user, including the StegVerse ecosystem's own; no secret or token is referenced, introduced or moved by this fold",
+  "invariants": [
+    "Every workflow file is registered in surfaces[]; an unregistered or changed one fails closed (tests/test_workflow_surface_registry.py).",
+    "A new check is a group in tools/tasks/task_catalog.json, never a new workflow file.",
+    "The stable dispatcher carries no workflow_dispatch, schedule, repository_dispatch, issues or workflow_run trigger; a kept surface is pinned by sha256 and unchanged by the fold.",
+    "G17 documented exception: above 2 workflow files, every kept surface other than the dispatcher carries an exception record (lifecycle and technical-necessity justification); the count never exceeds exception_repository_workflow_count_max (3)."
+  ],
+  "unregistered_workflow_outcome": {
+    "disposition": "FAIL_CLOSED",
+    "failure_code": "UNREGISTERED_WORKFLOW_SURFACE",
+    "failed_predicate": "EVERY_WORKFLOW_FILE_IS_REGISTERED",
+    "required_evidence_or_repair": "register the file in control/workflow-surface-registry.json surfaces[] or fold it into tools/tasks/task_catalog.json",
+    "retry_entrypoint": "tests/test_workflow_surface_registry.py",
+    "owning_existing_goal": "G17-WORKFLOW-SURFACE-MINIMIZATION (StegVerse-Labs/.github#167/#168); StegVerse-org/.github#166",
+    "next_attempt": "the next pull request touching .github/workflows/"
+  },
+  "surfaces": [
+    {
+      "path": ".github/workflows/validation-dispatcher.yml",
+      "classification": "KEEP_STABLE_DISPATCHER",
+      "triggers": [
+        "pull_request",
+        "push"
+      ],
+      "permissions": {
+        "contents": "read"
+      }
+    },
+    {
+      "path": ".github/workflows/organization-ledger-writer.yml",
+      "classification": "KEEP_EXISTING_SURFACE_UNCHANGED",
+      "triggers": [
+        "push"
+      ],
+      "permissions": {
+        "contents": "read"
+      },
+      "reason": "KEEP_EXISTING_SURFACE_UNCHANGED (documented exception, ledger writer): the push-only organization-ledger writer (contents: write, pushing refs/stegverse/organization-ledger). Ledger appends go only through this documented writer; org-runtime/interlock-intr.json L50/L102 and resident-runtime/organization_ledger_epoch.py L41 name it as the epoch carrier, and tests/test_manifest_epoch_bindings.py reads its trigger block. The dispatcher holds contents: read only.",
+      "verbatim_sha256": "146a0ac56f98ee1b0b9c669b85e21db6faca758d6a0d9d5bb6d0f588df50b967",
+      "exception": {
+        "lifecycle": "documented organization-ledger writer (push-only)",
+        "justification": "KEEP_EXISTING_SURFACE_UNCHANGED (documented exception, ledger writer): the push-only organization-ledger writer (contents: write, pushing refs/stegverse/organization-ledger). Ledger appends go only through this documented writer; org-runtime/interlock-intr.json L50/L102 and resident-runtime/organization_ledger_epoch.py L41 name it as the epoch carrier, and tests/test_manifest_epoch_bindings.py reads its trigger block. The dispatcher holds contents: read only.",
+        "within_exception_ceiling": true
+      }
+    },
+    {
+      "path": ".github/workflows/organization-ledger-transition.yml",
+      "classification": "KEEP_EXISTING_SURFACE_UNCHANGED",
+      "triggers": [
+        "pull_request",
+        "push"
+      ],
+      "permissions": {
+        "contents": "read"
+      },
+      "reason": "KEEP_EXISTING_SURFACE_UNCHANGED (contract-pinned): tests/test_organization_ledger_published_ref.py L78 and L177 read this exact file and assert its content (no workflow_dispatch, contents: read, runs tests.test_organization_ledger_published_ref); tests/fixtures/intr-protocol/destinations/SV-LLM.interlock-intr.json L71 names it as committed_request_entrypoint.",
+      "verbatim_sha256": "3ccb26ced8c9c60afcc1b18e97609e7d6a886847e176479017211efd5136db89",
+      "exception": {
+        "lifecycle": "contract-pinned validator (tests read the file)",
+        "justification": "KEEP_EXISTING_SURFACE_UNCHANGED (contract-pinned): tests/test_organization_ledger_published_ref.py L78 and L177 read this exact file and assert its content (no workflow_dispatch, contents: read, runs tests.test_organization_ledger_published_ref); tests/fixtures/intr-protocol/destinations/SV-LLM.interlock-intr.json L71 names it as committed_request_entrypoint.",
+        "within_exception_ceiling": true
+      }
+    },
+    {
+      "path": ".github/workflows/resident-federation-cycle.yml",
+      "classification": "KEEP_EXISTING_SURFACE_UNCHANGED",
+      "triggers": [
+        "workflow_dispatch"
+      ],
+      "permissions": {
+        "contents": "read"
+      },
+      "reason": "KEEP_EXISTING_SURFACE_UNCHANGED (contract-pinned): resident-runtime/activation-manifest.json names it as the dispatch_input epoch dispatcher for six bindings, and tests/test_manifest_epoch_bindings.py requires each binding's dispatcher to be an in-tree .github/workflows/ file carrying workflow_dispatch. Its only trigger is workflow_dispatch; the lane runs no dispatch.",
+      "verbatim_sha256": "d80c6e82877e951f36b269983b1f7e380fedb261e296de0567dd71a7c2ae1c4f",
+      "exception": {
+        "lifecycle": "contract-pinned epoch dispatcher (manifest bindings)",
+        "justification": "KEEP_EXISTING_SURFACE_UNCHANGED (contract-pinned): resident-runtime/activation-manifest.json names it as the dispatch_input epoch dispatcher for six bindings, and tests/test_manifest_epoch_bindings.py requires each binding's dispatcher to be an in-tree .github/workflows/ file carrying workflow_dispatch. Its only trigger is workflow_dispatch; the lane runs no dispatch.",
+        "within_exception_ceiling": true
+      }
+    }
+  ],
+  "folded": [
+    {
+      "workflow": ".github/workflows/intr-destination-capability-validation.yml",
+      "name": "Validate InTr Destination Capability",
+      "triggers_before": [
+        "pull_request",
+        "push"
+      ],
+      "classification": "CONSOLIDATE_INTO_STABLE_DISPATCHER",
+      "status": "DONE",
+      "catalog_groups": [
+        "intr-destination-capability-validation.validate-intr-destination"
+      ],
+      "verbatim_record": "tools/tasks/folded/intr-destination-capability-validation.yml",
+      "verbatim_sha256": "7d65efa1e25367da61d951b9036206c31f604b84d13203f241d32b025e1eb0da"
+    },
+    {
+      "workflow": ".github/workflows/intr-path-transfer-validation.yml",
+      "name": "Validate InTr Mesh Path Transfer",
+      "triggers_before": [
+        "pull_request",
+        "push"
+      ],
+      "classification": "CONSOLIDATE_INTO_STABLE_DISPATCHER",
+      "status": "DONE",
+      "catalog_groups": [
+        "intr-path-transfer-validation.unit",
+        "intr-path-transfer-validation.dry-run"
+      ],
+      "verbatim_record": "tools/tasks/folded/intr-path-transfer-validation.yml",
+      "verbatim_sha256": "0c168c71b63f38c29b2eaa469369077ba8e40899683231d5446358b35dc1508c"
+    },
+    {
+      "workflow": ".github/workflows/org-boundary-execution.yml",
+      "name": "Org Boundary Execution",
+      "triggers_before": [
+        "push",
+        "pull_request",
+        "workflow_dispatch"
+      ],
+      "classification": "CONSOLIDATE_INTO_STABLE_DISPATCHER",
+      "status": "DONE",
+      "catalog_groups": [
+        "org-boundary-execution.execute"
+      ],
+      "verbatim_record": "tools/tasks/folded/org-boundary-execution.yml",
+      "verbatim_sha256": "c12678542863cfee3b10fb03a582b53dd89ee04e6eaf2a82ec9cd1330ec5792f"
+    },
+    {
+      "workflow": ".github/workflows/org-runtime-boundary.yml",
+      "name": "Validate Organization Resident Runtime and Interlock-InTr Boundary",
+      "triggers_before": [
+        "pull_request",
+        "push",
+        "workflow_dispatch"
+      ],
+      "classification": "CONSOLIDATE_INTO_STABLE_DISPATCHER",
+      "status": "DONE",
+      "catalog_groups": [
+        "org-runtime-boundary.validate"
+      ],
+      "verbatim_record": "tools/tasks/folded/org-runtime-boundary.yml",
+      "verbatim_sha256": "08e927d05826871bdc6e72f87fa2580d72cbfa9db538f75a3392cb7a9501fb96"
+    },
+    {
+      "workflow": ".github/workflows/validate-capability-discovery.yml",
+      "name": "SV002 Capability Discovery",
+      "triggers_before": [
+        "push",
+        "pull_request"
+      ],
+      "classification": "CONSOLIDATE_INTO_STABLE_DISPATCHER",
+      "status": "DONE",
+      "catalog_groups": [
+        "validate-capability-discovery.validate"
+      ],
+      "verbatim_record": "tools/tasks/folded/validate-capability-discovery.yml",
+      "verbatim_sha256": "22d931f8c3555377635f9fbbae514a5541073230fc923392b913ad9d3fd78b25"
+    }
+  ],
+  "ceiling_fail_closed": {
+    "disposition": "FAIL_CLOSED",
+    "workflow_count": 4,
+    "failure_code": "G17_CONTRACT_FLOOR_ABOVE_EXCEPTION_CEILING",
+    "failed_predicate": "workflow_count <= exception_repository_workflow_count_max (3)",
+    "required_evidence_or_repair": "a change that re-points the contracts naming organization-ledger-transition.yml (tests/test_organization_ledger_published_ref.py L78/L177, tests/fixtures/intr-protocol/destinations/SV-LLM.interlock-intr.json L71) or resident-federation-cycle.yml (resident-runtime/activation-manifest.json dispatch_input bindings, tests/test_manifest_epoch_bindings.py) at the dispatcher or a catalog group, then folds that file",
+    "retry_entrypoint": "tests/test_workflow_surface_registry.py",
+    "owning_existing_goal": "G17-WORKFLOW-SURFACE-MINIMIZATION (StegVerse-Labs/.github#167/#168); StegVerse-org/.github#166",
+    "next_attempt": "the next pull request touching .github/workflows/ or those contracts"
+  }
+}

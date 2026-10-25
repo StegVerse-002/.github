@@ -1,0 +1,1 @@
+python3 -m unittest -v tests.test_sv002_pre_t0_readiness
