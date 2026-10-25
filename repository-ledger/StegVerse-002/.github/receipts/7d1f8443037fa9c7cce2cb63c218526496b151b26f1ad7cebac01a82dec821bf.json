@@ -1,0 +1,45 @@
+{
+  "authority_effect": "NONE",
+  "evidence": {
+    "addressed_service": "stegverse-002.intr-destination",
+    "communication_id": "intr-path-v1:AdmittedCode->StegVerse-002",
+    "disposition": "ALLOW",
+    "message": {
+      "body": {
+        "path_id": "AdmittedCode->StegVerse-002:intr-destination",
+        "schema": "stegverse.org-intr-destination-diagnostic/v1",
+        "transfer_commit": "18746f943161cda33e02cab96aa84454400bb080"
+      },
+      "communication_id": "intr-path-v1:AdmittedCode->StegVerse-002",
+      "message_class": "ecosystem.communication"
+    },
+    "message_sha256": "sha256:9ff29dce37b7a1bdcf720ee09a8333409e805b632dc799502bb7a8e166b0ed46",
+    "path_id": "AdmittedCode->StegVerse-002:intr-destination",
+    "payload_sha256": "sha256:25107159e6206008ae3a55824b053baf402ab44712d306793c9a78477923429d",
+    "repository": "StegVerse-002/.github",
+    "schema": "stegverse.intr-path-ingress-evidence/v1",
+    "source_inclusion": {
+      "source_ledger_tip": "d65408cbe17075fd0659cdb1159bc81f633627e9",
+      "state": "VERIFIED_BY_ANONYMOUS_PUBLIC_LEDGER_READ",
+      "tvc_read_receipt": null
+    },
+    "source_organization_receipt_sha256": "sha256:5d943eca1e0730c01b2a2c62585c8c273d93385b796c73c7d38b78e860cc6171",
+    "source_repository": "AdmittedCode/.github",
+    "source_repository_receipt_sha256": "sha256:942d15709d2bb4da292e647e7feda412e21ea5c7ac0a7845b7b9a20bc90785a8"
+  },
+  "hb_reference": {
+    "authority_effect": "NONE",
+    "derived_from_clock": false,
+    "epoch": 469411750,
+    "progression_dependency": "OSCILLATOR_ONLY"
+  },
+  "observed_at": "hb-epoch:469411750",
+  "predecessor_state_sha256": "sha256:25107159e6206008ae3a55824b053baf402ab44712d306793c9a78477923429d",
+  "previous_receipt_sha256": "sha256:c96a9fab22bf43eeb3d0fb9435b81c64b584a30dba2b4233b2c5a0c5eade271a",
+  "receipt_sha256": "sha256:7d1f8443037fa9c7cce2cb63c218526496b151b26f1ad7cebac01a82dec821bf",
+  "repository": "StegVerse-002/.github",
+  "schema": "stegverse.repo-transition-receipt/v1",
+  "successor_state_sha256": "sha256:ee6d12648b3c298813fcabb63413b09e174015ad3529736d9d52cedeadeb0149",
+  "transition_class": "INTR_MESH_PATH_INGRESS",
+  "transition_id": "INTR_MESH_PATH_INGRESS:AdmittedCode->StegVerse-002:intr-destination@intr-path-v1:AdmittedCode->StegVerse-002"
+}
