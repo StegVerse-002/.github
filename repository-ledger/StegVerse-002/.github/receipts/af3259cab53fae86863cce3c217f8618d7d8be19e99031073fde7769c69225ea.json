@@ -1,0 +1,35 @@
+{
+  "authority_effect": "NONE",
+  "evidence": {
+    "communication_id": null,
+    "disposition": "ALLOW",
+    "epoch_source": {
+      "head_receipt_sha256": "sha256:bcf489ab22ead0734ffeef3d17702cd2f08043e699a8351bf62c5f5be718cc15",
+      "ledger_ref": "refs/stegverse/organization-ledger",
+      "ledger_repository": "StegVerse-Labs/.github",
+      "ledger_tip": "89067f0d8da1e6b1aef33ab79074743cce1b743f",
+      "observed": "hb_reference.epoch 469411750, derived_from_clock false, read anonymously from the public ledger ref",
+      "organization": "StegVerse-Labs"
+    },
+    "hb_epoch": 469411750,
+    "intr_hop": false,
+    "packet_id": "stegverse-002-organization-ledger-supplied-epoch-001",
+    "payload_sha256": "sha256:0aa91b724ba4900c5776eb261eb21c48028d70eaac72c57a8436e87863274d35",
+    "schema": "stegverse.organization-ledger-supplied-epoch/v1"
+  },
+  "hb_reference": {
+    "authority_effect": "NONE",
+    "derived_from_clock": false,
+    "epoch": 469411750,
+    "progression_dependency": "OSCILLATOR_ONLY"
+  },
+  "observed_at": "hb-epoch:469411750",
+  "predecessor_state_sha256": "sha256:0aa91b724ba4900c5776eb261eb21c48028d70eaac72c57a8436e87863274d35",
+  "previous_receipt_sha256": "sha256:69a6893e9b2a99f6dba1444e195a7ba159470eaf91136c8725b3dbee5e050b3d",
+  "receipt_sha256": "sha256:af3259cab53fae86863cce3c217f8618d7d8be19e99031073fde7769c69225ea",
+  "repository": "StegVerse-002/.github",
+  "schema": "stegverse.repo-transition-receipt/v1",
+  "successor_state_sha256": "sha256:0c5ec246b2a05b33a63eac56df5436c48a31e06cbefb59dd652cfc1e00c2ab7d",
+  "transition_class": "ORGANIZATION_LEDGER_SUPPLIED_EPOCH",
+  "transition_id": "ORGANIZATION_LEDGER_SUPPLIED_EPOCH:stegverse-002-organization-ledger-supplied-epoch-001"
+}
