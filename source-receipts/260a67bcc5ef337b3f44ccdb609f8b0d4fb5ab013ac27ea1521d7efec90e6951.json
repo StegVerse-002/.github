@@ -1,0 +1,45 @@
+{
+  "authority_effect": "NONE",
+  "evidence": {
+    "addressed_service": "stegverse-002.intr-destination",
+    "communication_id": "intr-path-v1:StegVerse-org->StegVerse-002",
+    "disposition": "ALLOW",
+    "message": {
+      "body": {
+        "path_id": "StegVerse-org->StegVerse-002:intr-destination",
+        "schema": "stegverse.org-intr-destination-diagnostic/v1",
+        "transfer_commit": "5b98086eb5fe83e2a2f825aadbdc58fb12a8d02d"
+      },
+      "communication_id": "intr-path-v1:StegVerse-org->StegVerse-002",
+      "message_class": "ecosystem.communication"
+    },
+    "message_sha256": "sha256:e88ab59fc6e811be85260010d2c15948e25424d4b48fa30f16b7aba9368d6d1b",
+    "path_id": "StegVerse-org->StegVerse-002:intr-destination",
+    "payload_sha256": "sha256:b282950adbbe751bd1a920c33aaa6de511730736005caccdc4778007746dcfa4",
+    "repository": "StegVerse-002/.github",
+    "schema": "stegverse.intr-path-ingress-evidence/v1",
+    "source_inclusion": {
+      "source_ledger_tip": "fb40fa20bc2b59b6a60799af6c3a3bf28f9740c0",
+      "state": "VERIFIED_BY_ANONYMOUS_PUBLIC_LEDGER_READ",
+      "tvc_read_receipt": null
+    },
+    "source_organization_receipt_sha256": "sha256:e4784c90cd70daaa623a5c0db0cd4a825edc827b17fe5814338c9e2712add3c9",
+    "source_repository": "StegVerse-org/.github",
+    "source_repository_receipt_sha256": "sha256:290941dd9929a70d0185ddcf87696da4de3b68f565a915d595a1641adee64b40"
+  },
+  "hb_reference": {
+    "authority_effect": "NONE",
+    "derived_from_clock": false,
+    "epoch": 469411750,
+    "progression_dependency": "OSCILLATOR_ONLY"
+  },
+  "observed_at": "hb-epoch:469411750",
+  "predecessor_state_sha256": "sha256:b282950adbbe751bd1a920c33aaa6de511730736005caccdc4778007746dcfa4",
+  "previous_receipt_sha256": "sha256:b29d578d6f28f50876dd179d2a6662f02e2ca51adf705cf3b896468cee759cf8",
+  "receipt_sha256": "sha256:260a67bcc5ef337b3f44ccdb609f8b0d4fb5ab013ac27ea1521d7efec90e6951",
+  "repository": "StegVerse-002/.github",
+  "schema": "stegverse.repo-transition-receipt/v1",
+  "successor_state_sha256": "sha256:18539eabe45ee131897b9015b56bc793f888cebf4a62115c4aef46758300f8eb",
+  "transition_class": "INTR_MESH_PATH_INGRESS",
+  "transition_id": "INTR_MESH_PATH_INGRESS:StegVerse-org->StegVerse-002:intr-destination@intr-path-v1:StegVerse-org->StegVerse-002"
+}
