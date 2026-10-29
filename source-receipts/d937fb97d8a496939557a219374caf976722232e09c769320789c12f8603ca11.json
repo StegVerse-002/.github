@@ -1,0 +1,45 @@
+{
+  "authority_effect": "NONE",
+  "evidence": {
+    "addressed_service": "stegverse-002.intr-destination",
+    "communication_id": "intr-path-v1:formalism-tests->StegVerse-002",
+    "disposition": "ALLOW",
+    "message": {
+      "body": {
+        "path_id": "formalism-tests->StegVerse-002:intr-destination",
+        "schema": "stegverse.org-intr-destination-diagnostic/v1",
+        "transfer_commit": "148fceb72dc2e76b348d566847db63bc09864adb"
+      },
+      "communication_id": "intr-path-v1:formalism-tests->StegVerse-002",
+      "message_class": "ecosystem.communication"
+    },
+    "message_sha256": "sha256:76f48ff245d8bf2742d5b512efc40f6ea09fa7e27f1a0b7848e03fd1afce58bd",
+    "path_id": "formalism-tests->StegVerse-002:intr-destination",
+    "payload_sha256": "sha256:c1d1f5c94dc5e4cfdfdbc082c1076fc136372ef84f184aeab6d5f4236e0260da",
+    "repository": "StegVerse-002/.github",
+    "schema": "stegverse.intr-path-ingress-evidence/v1",
+    "source_inclusion": {
+      "source_ledger_tip": "e1fd9490c80cb625db5cf3c16d859fb65c791f28",
+      "state": "VERIFIED_BY_ANONYMOUS_PUBLIC_LEDGER_READ",
+      "tvc_read_receipt": null
+    },
+    "source_organization_receipt_sha256": "sha256:3ae1521030fc272942e9fd1698df484b8bc715269c1049cc7c8824c621d2ed0c",
+    "source_repository": "formalism-tests/.github",
+    "source_repository_receipt_sha256": "sha256:f9047bd85125cb89a8fb01988275f27de7924c7976b5e49d5eb5a5eaa5772914"
+  },
+  "hb_reference": {
+    "authority_effect": "NONE",
+    "derived_from_clock": false,
+    "epoch": 469411750,
+    "progression_dependency": "OSCILLATOR_ONLY"
+  },
+  "observed_at": "hb-epoch:469411750",
+  "predecessor_state_sha256": "sha256:c1d1f5c94dc5e4cfdfdbc082c1076fc136372ef84f184aeab6d5f4236e0260da",
+  "previous_receipt_sha256": "sha256:7e150aa4972b87ab96e4f8ab4e7522fb25719c226f441126cbb2cba06c4e73ec",
+  "receipt_sha256": "sha256:d937fb97d8a496939557a219374caf976722232e09c769320789c12f8603ca11",
+  "repository": "StegVerse-002/.github",
+  "schema": "stegverse.repo-transition-receipt/v1",
+  "successor_state_sha256": "sha256:fc06f2db340715b90353280ab256bd51af2d81d3d2558e8634bf834e125e3b6c",
+  "transition_class": "INTR_MESH_PATH_INGRESS",
+  "transition_id": "INTR_MESH_PATH_INGRESS:formalism-tests->StegVerse-002:intr-destination@intr-path-v1:formalism-tests->StegVerse-002"
+}
