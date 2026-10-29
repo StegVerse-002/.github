@@ -1,0 +1,42 @@
+{
+  "authority_effect": "NONE",
+  "evidence": {
+    "capability": "intr-destination",
+    "communication_id": "intr-path-v1:StegVerse-002->formalism-tests",
+    "destination_address": "formalism-tests.intr-destination",
+    "destination_organization": "formalism-tests",
+    "disposition": "ALLOW",
+    "merge_transfer_organization_receipt_sha256": "sha256:d08a526b7785bfa47ecac4f4ad285cfc3932df2d5d3f482e6621224b20f644c4",
+    "message": {
+      "body": {
+        "path_id": "StegVerse-002->formalism-tests:intr-destination",
+        "schema": "stegverse.org-intr-destination-diagnostic/v1",
+        "transfer_commit": "180b1f30293f4d5d96fcf8008ae4d60cdb646b3f"
+      },
+      "communication_id": "intr-path-v1:StegVerse-002->formalism-tests",
+      "message_class": "ecosystem.communication"
+    },
+    "message_sha256": "sha256:8a8f1fd9a8d96f8d00920f1f9fc81bda4efa568f6ab42da98fca08227d584a5a",
+    "path_id": "StegVerse-002->formalism-tests:intr-destination",
+    "payload_sha256": "sha256:0c7063c3dd6d68c20e7cbbc9b8d5255f1f9ffbab071b51fde246e8c2e1daf66a",
+    "repository": "StegVerse-002/.github",
+    "schema": "stegverse.intr-path-transfer-evidence/v1",
+    "source_organization": "StegVerse-002",
+    "transfer_commit": "180b1f30293f4d5d96fcf8008ae4d60cdb646b3f"
+  },
+  "hb_reference": {
+    "authority_effect": "NONE",
+    "derived_from_clock": false,
+    "epoch": 469411750,
+    "progression_dependency": "OSCILLATOR_ONLY"
+  },
+  "observed_at": "hb-epoch:469411750",
+  "predecessor_state_sha256": "sha256:0c7063c3dd6d68c20e7cbbc9b8d5255f1f9ffbab071b51fde246e8c2e1daf66a",
+  "previous_receipt_sha256": "sha256:379d46ebe476cd498b20ece9b59565e63593ee1607e0ce7004c557a853bd0ebe",
+  "receipt_sha256": "sha256:e1cbf0eb45686761da98e5023e007c303b39d3097287522080557c15be40f498",
+  "repository": "StegVerse-002/.github",
+  "schema": "stegverse.repo-transition-receipt/v1",
+  "successor_state_sha256": "sha256:48a7765970b4a539cdd6967261d5f2013859a5f1c7f3452cd247999a882607cc",
+  "transition_class": "INTR_MESH_PATH_TRANSFER",
+  "transition_id": "INTR_MESH_PATH_TRANSFER:StegVerse-002->formalism-tests:intr-destination@intr-path-v1:StegVerse-002->formalism-tests"
+}
